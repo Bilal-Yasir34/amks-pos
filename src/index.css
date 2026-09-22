@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  html, body, #root, #root > div, main {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+  .print\:block {
+    display: block !important;
+  }
+  .print\:p-0 {
+    padding: 0 !important;
+  }
+  .print\:m-0 {
+    margin: 0 !important;
+  }
+  .print\:static {
+    position: static !important;
+  }
+  .print\:bg-transparent {
+    background: transparent !important;
+  }
+  .print\:w-auto {
+    width: auto !important;
+  }
+  .print\:max-w-none {
+    max-width: none !important;
+  }
+  .print\:max-h-none {
+    max-height: none !important;
+  }
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+  .print\:rounded-none {
+    border-radius: 0 !important;
+  }
+  .print\:border-none {
+    border: none !important;
+  }
+  .print\:overflow-visible {
+    overflow: visible !important;
+  }
+  .print\:inset-auto {
+    inset: auto !important;
+  }
+
+  /* POS Receipt thermal slip layout */
+  .pos-receipt-wrapper {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  .pos-receipt {
+    display: block !important;
+    width: 76mm !important;
+    max-width: 76mm !important;
+    margin: 0 auto !important;
+    padding: 3mm !important;
+    font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .pos-receipt * {
+    color: #000 !important;
+    border-color: #000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .pos-receipt-item {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}
+
+/* Barcode label print layout */
+@media print {
+  .barcode-label-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8mm !important;
+    padding: 5mm !important;
+  }
+  .barcode-label-item {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    border: 1px solid #000 !important;
+    padding: 4mm !important;
+    text-align: center !important;
+  }
+}
+
+.barcode-label-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.barcode-label-item {
+  border: 1px solid #ddd;
+  padding: 16px;
+  text-align: center;
+  background: white;
+}
+
