@@ -490,7 +490,7 @@ function InvoiceModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-transparent print:block print:inset-auto">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[92vh] flex flex-col print:max-w-none print:w-auto print:max-h-none print:shadow-none print:rounded-none print:p-0 print:border-none">
+      <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[92vh] flex flex-col print:max-w-none print:w-auto print:max-h-none print:shadow-none print:rounded-none print:p-0 print:border-none">
         <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between print:hidden">
           <div>
             <h3 className="font-semibold text-slate-900">Sale Completed!</h3>

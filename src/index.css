@@ -64,7 +64,7 @@
     inset: auto !important;
   }
 
-  /* POS Receipt thermal slip layout */
+  /* POS Receipt thermal slip layout (80mm) */
   .pos-receipt-wrapper {
     display: block !important;
     width: 100% !important;
@@ -73,24 +73,22 @@
     background: transparent !important;
   }
 
-  .pos-receipt {
+  .pos-receipt-thermal {
     display: block !important;
-    width: 76mm !important;
-    max-width: 76mm !important;
+    width: 78mm !important;
+    max-width: 78mm !important;
     margin: 0 auto !important;
-    padding: 3mm !important;
-    font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace !important;
+    padding: 2mm 3mm !important;
     font-size: 11px !important;
-    line-height: 1.25 !important;
+    line-height: 1.3 !important;
     box-shadow: none !important;
     border: none !important;
     background: #fff !important;
     color: #000 !important;
   }
 
-  .pos-receipt * {
+  .pos-receipt-thermal * {
     color: #000 !important;
-    border-color: #000 !important;
     box-shadow: none !important;
     text-shadow: none !important;
   }
@@ -99,6 +97,25 @@
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
+
+  /* A4 Invoice print layout */
+  .pos-invoice-a4 {
+    display: block !important;
+    width: 100% !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 12px !important;
+  }
+
+  .pos-invoice-a4 * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
 }
 
 /* Barcode label print layout */
@@ -106,15 +123,20 @@
   .barcode-label-grid {
     display: grid !important;
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 8mm !important;
-    padding: 5mm !important;
+    gap: 5mm !important;
+    padding: 2mm !important;
+    width: 100% !important;
   }
   .barcode-label-item {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
-    border: 1px solid #000 !important;
-    padding: 4mm !important;
+    border: 1px dashed #94a3b8 !important;
+    border-radius: 4px !important;
+    padding: 3mm !important;
     text-align: center !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
   }
 }
 
@@ -125,8 +147,9 @@
 }
 
 .barcode-label-item {
-  border: 1px solid #ddd;
-  padding: 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 14px;
   text-align: center;
   background: white;
 }

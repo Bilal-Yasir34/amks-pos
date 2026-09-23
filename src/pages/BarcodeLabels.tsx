@@ -2,12 +2,15 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Printer, X, CheckSquare, Square } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { BarcodeDisplay } from '@/components/BarcodeDisplay';
-import type { Product } from '@/types';
+import { getSettings } from '@/lib/settings';
+import { formatPrice } from '@/lib/format';
+import type { Product, Settings } from '@/types';
 
 interface LabelConfig {
   showBrand: boolean;
   showArticleName: boolean;
   showProductCode: boolean;
+  showPrice: boolean;
   showBarcodeNumber: boolean;
   showBarcodeGraphic: boolean;
 }
@@ -16,11 +19,13 @@ const DEFAULT_LABEL_CONFIG: LabelConfig = {
   showBrand: true,
   showArticleName: true,
   showProductCode: true,
+  showPrice: true,
   showBarcodeNumber: true,
   showBarcodeGraphic: true,
 };
 
 export function BarcodeLabels() {
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Map<string, number>>(new Map());
@@ -28,6 +33,12 @@ export function BarcodeLabels() {
   const [labelConfig, setLabelConfig] = useState<LabelConfig>(DEFAULT_LABEL_CONFIG);
   const [showPreview, setShowPreview] = useState(false);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    getSettings().then(setSettings);
+  }, []);
+
+  const currencySymbol = settings?.currency_symbol || 'Rs.';
 
   const loadProducts = useCallback(async () => {
     let query = supabase
@@ -104,12 +115,21 @@ export function BarcodeLabels() {
   const totalLabels = Array.from(selected.entries()).reduce((sum, [, count]) => sum + count, 0);
 
   function handlePrint() {
-    setShowPreview(false);
-    setTimeout(() => window.print(), 200);
+    window.print();
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <>
+      <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 6mm;
+          }
+        }
+      `}</style>
+
+      <div className={`max-w-7xl mx-auto ${showPreview ? 'print:hidden' : ''}`}>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Barcode Labels</h1>
@@ -329,7 +349,8 @@ export function BarcodeLabels() {
               [
                 { key: 'showBrand', label: 'Show AMKS brand' },
                 { key: 'showArticleName', label: 'Show article name' },
-                { key: 'showProductCode', label: 'Show product code' },
+                { key: 'showProductCode', label: 'Show product code & colour' },
+                { key: 'showPrice', label: 'Show price' },
                 { key: 'showBarcodeNumber', label: 'Show barcode number' },
                 { key: 'showBarcodeGraphic', label: 'Show barcode graphic' },
               ] as { key: keyof LabelConfig; label: string }[]
@@ -341,7 +362,7 @@ export function BarcodeLabels() {
                   onChange={(e) =>
                     setLabelConfig({ ...labelConfig, [item.key]: e.target.checked })
                   }
-                  className="w-4 h-4 rounded"
+                  className="w-4 h-4 rounded text-blue-600 cursor-pointer"
                 />
                 <span className="text-sm text-slate-700">{item.label}</span>
               </label>
@@ -354,30 +375,36 @@ export function BarcodeLabels() {
           </div>
         </div>
       </div>
+      </div>
 
       {/* Print preview modal */}
       {showPreview && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print:p-0 print:block">
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col print:max-w-full print:max-h-full print:shadow-none print:rounded-none">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-transparent print:block print:inset-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col print:max-w-none print:w-auto print:max-h-none print:shadow-none print:rounded-none print:p-0 print:border-none">
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between print:hidden">
-              <h3 className="font-semibold text-slate-900">Label Preview ({totalLabels} labels)</h3>
+              <div>
+                <h3 className="font-semibold text-slate-900">Label Preview ({totalLabels} labels)</h3>
+                <p className="text-xs text-slate-500">Ready to print on standard A4 label paper</p>
+              </div>
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={handlePrint}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center gap-2"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex items-center gap-2 cursor-pointer shadow-xs"
                 >
-                  <Printer size={18} /> Print
+                  <Printer size={18} /> Print Labels
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowPreview(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600"
+                  className="p-2 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <X size={20} />
                 </button>
               </div>
             </div>
 
-            <div className="p-5 overflow-y-auto print:p-0">
+            <div className="p-5 overflow-y-auto print:p-0 print:overflow-visible">
               <div className="barcode-label-grid">
                 {selectedProducts.map((product) => {
                   const count = selected.get(product.id) || 1;
@@ -387,23 +414,37 @@ export function BarcodeLabels() {
                       className="barcode-label-item"
                     >
                       {labelConfig.showBrand && (
-                        <div className="text-lg font-bold text-slate-900 mb-1">AMKS</div>
-                      )}
-                      {labelConfig.showArticleName && (
-                        <div className="text-sm text-slate-700 mb-1">{product.article_name}</div>
-                      )}
-                      {labelConfig.showProductCode && (
-                        <div className="text-xs text-slate-500 mb-2">
-                          Code: {product.product_code}
+                        <div className="text-sm font-black text-slate-900 tracking-wider uppercase mb-0.5">
+                          {settings?.business_name || 'AMKS'}
                         </div>
                       )}
+                      {labelConfig.showArticleName && (
+                        <div className="text-xs font-bold text-slate-800 line-clamp-1 mb-0.5">
+                          {product.article_name}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-600 print:text-black mb-1">
+                        {labelConfig.showProductCode && (
+                          <span className="font-mono font-medium">#{product.product_code}</span>
+                        )}
+                        {product.colour && (
+                          <span>• {product.colour}</span>
+                        )}
+                        {labelConfig.showPrice && (
+                          <span className="font-extrabold text-slate-900 print:text-black ml-1">
+                            {formatPrice(product.sale_price ?? product.normal_price, currencySymbol)}
+                          </span>
+                        )}
+                      </div>
                       {labelConfig.showBarcodeGraphic && (
-                        <div className="flex justify-center mb-1">
-                          <BarcodeDisplay value={product.barcode} width={1.5} height={50} displayValue={false} />
+                        <div className="flex justify-center mb-0.5">
+                          <BarcodeDisplay value={product.barcode} width={1.4} height={42} displayValue={false} />
                         </div>
                       )}
                       {labelConfig.showBarcodeNumber && (
-                        <div className="text-xs font-mono text-slate-700">{product.barcode}</div>
+                        <div className="text-[11px] font-mono tracking-widest text-slate-800 print:text-black font-semibold">
+                          {product.barcode}
+                        </div>
                       )}
                     </div>
                   ));
@@ -413,6 +454,6 @@ export function BarcodeLabels() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
