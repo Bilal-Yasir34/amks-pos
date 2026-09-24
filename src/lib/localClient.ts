@@ -7,9 +7,96 @@ interface StoreData {
   sale_items: any[];
   inventory_movements: any[];
   settings: any[];
+  suppliers: any[];
+  supplier_payments: any[];
+  expenses: any[];
 }
 
 const STORAGE_KEY = 'amks_pos_local_db_v1';
+
+const DEFAULT_SUPPLIERS = [
+  {
+    id: 'sup-0001',
+    name: 'Al-Karam Textile Mills',
+    city: 'Karachi',
+    address: 'Plot 45, Sector 15, Korangi Industrial Area',
+    phone: '+92 300 1234567',
+    notes: 'Premium wholesale cotton fabrics and ready-to-wear apparel',
+    created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'sup-0002',
+    name: 'Lahore Garments Wholesale',
+    city: 'Lahore',
+    address: 'Shop 14, Azam Cloth Market',
+    phone: '+92 321 7654321',
+    notes: 'Denim jeans, jackets and outerwear vendor',
+    created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'sup-0003',
+    name: 'Faisalabad Fabrics & Weaving',
+    city: 'Faisalabad',
+    address: 'Main Samundri Road, Industrial Zone',
+    phone: '+92 333 9876543',
+    notes: 'Cotton shirts, formal wear, and custom stitching',
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
+const DEFAULT_SUPPLIER_PAYMENTS = [
+  {
+    id: 'pay-0001',
+    supplier_id: 'sup-0001',
+    amount: 300000,
+    payment_method: 'Bank Transfer',
+    payment_date: new Date(Date.now() - 86400000 * 2).toISOString(),
+    notes: 'Advance installment for cotton shirt batch',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'pay-0002',
+    supplier_id: 'sup-0002',
+    amount: 100000,
+    payment_method: 'Cash',
+    payment_date: new Date(Date.now() - 86400000 * 1).toISOString(),
+    notes: 'Partial payment against denim order',
+    created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
+  },
+];
+
+const DEFAULT_EXPENSES = [
+  {
+    id: 'exp-0001',
+    title: 'Shop Electricity Bill',
+    category: 'Utilities',
+    amount: 14500,
+    expense_date: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
+    description: 'LESCO monthly shop electricity charges',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'exp-0002',
+    title: 'Packaging Bags & Labels',
+    category: 'Packaging',
+    amount: 6000,
+    expense_date: new Date(Date.now() - 86400000 * 1).toISOString().split('T')[0],
+    description: 'Printed boutique shopping bags (500 pcs)',
+    created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
+  },
+  {
+    id: 'exp-0003',
+    title: 'Staff Refreshments & Tea',
+    category: 'Refreshments',
+    amount: 1800,
+    expense_date: new Date().toISOString().split('T')[0],
+    description: 'Weekly team tea and drinking water bottles',
+    created_at: new Date().toISOString(),
+  },
+];
 
 const DEFAULT_PRODUCTS = [
   {
@@ -22,6 +109,11 @@ const DEFAULT_PRODUCTS = [
     normal_price: 3500.0,
     sale_price: 2999.0,
     brand_name: 'AMKS',
+    supplier_id: 'sup-0001',
+    supplier_name: 'Al-Karam Textile Mills',
+    purchase_quantity: 400,
+    purchase_cost: 600000,
+    cost_price: 1500.0,
     active: true,
     created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
     updated_at: new Date().toISOString(),
@@ -36,6 +128,11 @@ const DEFAULT_PRODUCTS = [
     normal_price: 3500.0,
     sale_price: 2999.0,
     brand_name: 'AMKS',
+    supplier_id: 'sup-0001',
+    supplier_name: 'Al-Karam Textile Mills',
+    purchase_quantity: 200,
+    purchase_cost: 300000,
+    cost_price: 1500.0,
     active: true,
     created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
     updated_at: new Date().toISOString(),
@@ -50,6 +147,11 @@ const DEFAULT_PRODUCTS = [
     normal_price: 7500.0,
     sale_price: 6999.0,
     brand_name: 'AMKS',
+    supplier_id: 'sup-0002',
+    supplier_name: 'Lahore Garments Wholesale',
+    purchase_quantity: 50,
+    purchase_cost: 175000,
+    cost_price: 3500.0,
     active: true,
     created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
     updated_at: new Date().toISOString(),
@@ -64,6 +166,11 @@ const DEFAULT_PRODUCTS = [
     normal_price: 4500.0,
     sale_price: 3999.0,
     brand_name: 'AMKS',
+    supplier_id: 'sup-0002',
+    supplier_name: 'Lahore Garments Wholesale',
+    purchase_quantity: 100,
+    purchase_cost: 200000,
+    cost_price: 2000.0,
     active: true,
     created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
     updated_at: new Date().toISOString(),
@@ -90,6 +197,9 @@ function getStore(): StoreData {
       sale_items: [],
       inventory_movements: [],
       settings: [...DEFAULT_SETTINGS],
+      suppliers: [...DEFAULT_SUPPLIERS],
+      supplier_payments: [...DEFAULT_SUPPLIER_PAYMENTS],
+      expenses: [...DEFAULT_EXPENSES],
     };
   }
 
@@ -103,6 +213,9 @@ function getStore(): StoreData {
         sale_items: parsed.sale_items || [],
         inventory_movements: parsed.inventory_movements || [],
         settings: parsed.settings || [...DEFAULT_SETTINGS],
+        suppliers: parsed.suppliers && parsed.suppliers.length > 0 ? parsed.suppliers : [...DEFAULT_SUPPLIERS],
+        supplier_payments: parsed.supplier_payments && parsed.supplier_payments.length > 0 ? parsed.supplier_payments : [...DEFAULT_SUPPLIER_PAYMENTS],
+        expenses: parsed.expenses && parsed.expenses.length > 0 ? parsed.expenses : [...DEFAULT_EXPENSES],
       };
     }
   } catch {
@@ -115,6 +228,9 @@ function getStore(): StoreData {
     sale_items: [],
     inventory_movements: [],
     settings: [...DEFAULT_SETTINGS],
+    suppliers: [...DEFAULT_SUPPLIERS],
+    supplier_payments: [...DEFAULT_SUPPLIER_PAYMENTS],
+    expenses: [...DEFAULT_EXPENSES],
   };
   saveStore(initial);
   return initial;

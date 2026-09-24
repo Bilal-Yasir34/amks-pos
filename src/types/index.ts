@@ -8,9 +8,35 @@ export interface Product {
   normal_price: number;
   sale_price: number | null;
   brand_name: string;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  purchase_quantity?: number | null;
+  purchase_cost?: number | null;
+  cost_price?: number | null;
   active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  city: string;
+  address: string;
+  phone: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierPayment {
+  id: string;
+  supplier_id: string;
+  amount: number;
+  payment_method: string;
+  payment_date: string;
+  notes?: string;
+  created_at: string;
 }
 
 export interface Sale {
@@ -23,6 +49,8 @@ export interface Sale {
   created_at: string;
   item_count?: number;
   total_quantity?: number;
+  total_cost?: number;
+  profit?: number;
 }
 
 export interface SaleItem {
@@ -35,6 +63,7 @@ export interface SaleItem {
   colour_snapshot: string;
   quantity: number;
   unit_price: number;
+  cost_price_snapshot?: number | null;
   price_type: string;
   total: number;
   created_at: string;
@@ -42,6 +71,17 @@ export interface SaleItem {
 
 export interface SaleWithItems extends Sale {
   sale_items: SaleItem[];
+}
+
+export interface Expense {
+  id: string;
+  title: string;
+  category: string;
+  amount: number;
+  expense_date: string;
+  description: string;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface InventoryMovement {
@@ -72,9 +112,10 @@ export interface CartItem {
   barcode: string;
   colour: string;
   unit_price: number;
+  cost_price?: number | null;
   price_type: 'sale' | 'normal';
   quantity: number;
   available_stock: number;
 }
 
-export type Page = 'dashboard' | 'pos' | 'products' | 'barcodes' | 'sales' | 'settings';
+export type Page = 'dashboard' | 'pos' | 'products' | 'suppliers' | 'vouchers' | 'barcodes' | 'sales' | 'settings';

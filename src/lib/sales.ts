@@ -68,19 +68,45 @@ export async function completeSale(
     colour_snapshot: item.colour,
     quantity: item.quantity,
     unit_price: item.unit_price,
+    cost_price_snapshot: item.cost_price ?? null,
     price_type: item.price_type,
     total: item.unit_price * item.quantity,
   }));
 
-  const { data: insertedItems, error: itemsError } = await supabase
+  let insertedItems: any = null;
+  let itemsError: any = null;
+
+  // Attempt insert with cost_price_snapshot
+  const primaryResult = await supabase
     .from('sale_items')
     .insert(saleItemsData)
     .select();
 
+  insertedItems = primaryResult.data;
+  itemsError = primaryResult.error;
+
+  // If primary insert fails (e.g. database schema has not added cost_price_snapshot column yet), retry without it
+  if (itemsError) {
+    console.warn('Initial sale_items insert failed, retrying without cost_price_snapshot:', itemsError.message);
+    const fallbackData = saleItemsData.map(({ cost_price_snapshot, ...rest }) => rest);
+    const fallbackResult = await supabase
+      .from('sale_items')
+      .insert(fallbackData)
+      .select();
+
+    if (!fallbackResult.error) {
+      insertedItems = fallbackResult.data;
+      itemsError = null;
+    } else {
+      console.error('Fallback sale_items insert also failed:', fallbackResult.error);
+      itemsError = fallbackResult.error;
+    }
+  }
+
   if (itemsError) {
     // Rollback: delete the sale (cascade will delete items if any)
     await supabase.from('sales').delete().eq('id', sale.id);
-    throw new Error('Failed to save sale items. Please try again.');
+    throw new Error(`Failed to save sale items: ${itemsError.message || 'Please try again.'}`);
   }
 
   // Decrement inventory and record movements

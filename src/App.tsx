@@ -19,11 +19,15 @@ import {
   Shield,
   ArrowLeft,
   ExternalLink,
+  Truck,
+  CreditCard,
 } from 'lucide-react';
 import type { Page } from '@/types';
 import { Dashboard } from '@/pages/Dashboard';
 import { POS } from '@/pages/POS';
 import { Products } from '@/pages/Products';
+import { Suppliers } from '@/pages/Suppliers';
+import { PurchaseVouchers } from '@/pages/PurchaseVouchers';
 import { BarcodeLabels } from '@/pages/BarcodeLabels';
 import { Sales } from '@/pages/Sales';
 import { SettingsPage } from '@/pages/Settings';
@@ -31,11 +35,13 @@ import { isSupabaseConfigured, saveSupabaseConfig, supabaseUrl, supabase } from 
 import { getIsAdminAuthenticated, clearAdminSessionAuthentication } from '@/lib/auth';
 import { LoginScreen } from '@/components/LoginScreen';
 
-type AdminSection = 'dashboard' | 'products' | 'barcodes' | 'sales' | 'settings';
+type AdminSection = 'dashboard' | 'products' | 'suppliers' | 'vouchers' | 'barcodes' | 'sales' | 'settings';
 
 const ADMIN_NAV_ITEMS: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'products', label: 'Products / Inventory', icon: Package },
+  { id: 'suppliers', label: 'Suppliers', icon: Truck },
+  { id: 'vouchers', label: 'Purchase Vouchers', icon: CreditCard },
   { id: 'barcodes', label: 'Barcode Labels', icon: Barcode },
   { id: 'sales', label: 'Sales History', icon: Receipt },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -44,10 +50,14 @@ const ADMIN_NAV_ITEMS: { id: AdminSection; label: string; icon: typeof LayoutDas
 const FIX_PERMISSIONS_SQL = `-- Run this in your Supabase SQL Editor:
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT ALL ON TABLE public.products TO anon, authenticated;
+GRANT ALL ON TABLE public.suppliers TO anon, authenticated;
+GRANT ALL ON TABLE public.supplier_payments TO anon, authenticated;
+GRANT ALL ON TABLE public.expenses TO anon, authenticated;
 GRANT ALL ON TABLE public.sales TO anon, authenticated;
 GRANT ALL ON TABLE public.sale_items TO anon, authenticated;
 GRANT ALL ON TABLE public.inventory_movements TO anon, authenticated;
 GRANT ALL ON TABLE public.settings TO anon, authenticated;
+ALTER TABLE IF EXISTS public.sale_items ADD COLUMN IF NOT EXISTS cost_price_snapshot numeric(12,2);
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;`;
@@ -69,7 +79,11 @@ function parseRoute(): { isAdmin: boolean; adminPage: AdminSection } {
   let adminPage: AdminSection = 'dashboard';
   const full = `${path} ${hash} ${search}`;
 
-  if (full.includes('products')) {
+  if (full.includes('vouchers') || full.includes('purchase-voucher')) {
+    adminPage = 'vouchers';
+  } else if (full.includes('suppliers')) {
+    adminPage = 'suppliers';
+  } else if (full.includes('products')) {
     adminPage = 'products';
   } else if (full.includes('barcodes')) {
     adminPage = 'barcodes';
@@ -287,14 +301,14 @@ function App() {
                 <button
                   key={item.id}
                   onClick={() => navigateTo(`/admin/${item.id}`)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
                     isActive
-                      ? 'bg-slate-800 text-blue-400 border-l-4 border-blue-500 pl-2'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
-                  <Icon size={18} />
-                  {item.label}
+                  <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400'} />
+                  <span>{item.label}</span>
                 </button>
               );
             })}
@@ -391,7 +405,11 @@ function App() {
                 </span>
                 <span className="text-xs text-slate-400">/</span>
                 <span className="text-xs text-slate-500 capitalize">
-                  {route.adminPage === 'barcodes' ? 'Barcode Labels' : route.adminPage}
+                  {route.adminPage === 'barcodes'
+                    ? 'Barcode Labels'
+                    : route.adminPage === 'vouchers'
+                    ? 'Purchase Vouchers'
+                    : route.adminPage}
                 </span>
               </div>
             </div>
@@ -467,6 +485,8 @@ function App() {
           <main className="flex-1 p-4 lg:p-6 print:p-0">
             {route.adminPage === 'dashboard' && <Dashboard onNavigate={handleDashboardNavigate} />}
             {route.adminPage === 'products' && <Products />}
+            {route.adminPage === 'suppliers' && <Suppliers />}
+            {route.adminPage === 'vouchers' && <PurchaseVouchers />}
             {route.adminPage === 'barcodes' && <BarcodeLabels />}
             {route.adminPage === 'sales' && <Sales />}
             {route.adminPage === 'settings' && <SettingsPage />}
@@ -524,7 +544,7 @@ function App() {
           <span>Complete Sale</span>
         </div>
 
-        {/* Right actions: DB indicator & Admin Portal access */}
+        {/* Right actions: DB indicator */}
         <div className="flex items-center gap-2 sm:gap-3">
           {isSupabaseConfigured ? (
             <div
@@ -544,17 +564,6 @@ function App() {
               <span>Local Mode</span>
             </button>
           )}
-
-          {/* Admin Portal Button */}
-          <button
-            type="button"
-            onClick={() => navigateTo('/admin')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white shadow-sm hover:shadow transition-all cursor-pointer"
-            title="Open Admin Portal (Protected)"
-          >
-            <Shield size={14} className="text-blue-400" />
-            <span>Admin Portal</span>
-          </button>
         </div>
       </header>
 

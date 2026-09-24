@@ -1,5 +1,20 @@
 import { useState, useEffect } from 'react';
-import { ShoppingCart, Package, Barcode, Receipt, TrendingUp, AlertTriangle, XCircle, Boxes, Plus, FileText } from 'lucide-react';
+import {
+  ShoppingCart,
+  Package,
+  Barcode,
+  Receipt,
+  TrendingUp,
+  AlertTriangle,
+  XCircle,
+  Boxes,
+  Plus,
+  FileText,
+  Truck,
+  CreditCard,
+  ArrowRight,
+  Sparkles,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getSettings } from '@/lib/settings';
 import { formatPrice } from '@/lib/format';
@@ -81,75 +96,175 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   }
 
-  const quickActions = [
-    { label: 'New Sale', icon: ShoppingCart, page: 'pos' as Page, color: 'bg-blue-600 hover:bg-blue-700' },
-    { label: 'Add Product', icon: Plus, page: 'products' as Page, color: 'bg-emerald-600 hover:bg-emerald-700' },
-    { label: 'Print Barcode Labels', icon: Barcode, page: 'barcodes' as Page, color: 'bg-amber-600 hover:bg-amber-700' },
-    { label: 'View Inventory', icon: Package, page: 'products' as Page, color: 'bg-slate-600 hover:bg-slate-700' },
-    { label: 'View Sales', icon: Receipt, page: 'sales' as Page, color: 'bg-purple-600 hover:bg-purple-700' },
+  const actionCards = [
+    {
+      title: 'POS Terminal',
+      desc: 'Scan barcodes and process sales checkout',
+      icon: ShoppingCart,
+      page: 'pos' as Page,
+      color: 'bg-blue-50 text-blue-600 border-blue-100 hover:border-blue-300',
+      badge: 'Counter',
+    },
+    {
+      title: 'Add New Product',
+      desc: 'Create product, pricing & supplier details',
+      icon: Plus,
+      page: 'products' as Page,
+      color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:border-emerald-300',
+      badge: 'Catalog',
+    },
+    {
+      title: 'Manage Suppliers',
+      desc: 'Vendor profiles, cities & contact info',
+      icon: Truck,
+      page: 'suppliers' as Page,
+      color: 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:border-indigo-300',
+      badge: 'Procurement',
+    },
+    {
+      title: 'Purchase Vouchers',
+      desc: 'Supplier payables, pending dues & payments',
+      icon: CreditCard,
+      page: 'vouchers' as Page,
+      color: 'bg-teal-50 text-teal-600 border-teal-100 hover:border-teal-300',
+      badge: 'Ledger',
+    },
+    {
+      title: 'Sales & Expenses',
+      desc: 'Invoices, profits, dates & operating costs',
+      icon: Receipt,
+      page: 'sales' as Page,
+      color: 'bg-purple-50 text-purple-600 border-purple-100 hover:border-purple-300',
+      badge: 'Analytics',
+    },
+    {
+      title: 'Barcode Printing',
+      desc: 'Thermal sticker labels generator',
+      icon: Barcode,
+      page: 'barcodes' as Page,
+      color: 'bg-amber-50 text-amber-600 border-amber-100 hover:border-amber-300',
+      badge: 'Labels',
+    },
   ];
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-500 mt-1">AMKS by AMKAS International</p>
+    <div className="max-w-7xl mx-auto space-y-6">
+      {/* Executive Welcome Hero Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="relative z-10">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-xs font-semibold mb-3">
+            <Sparkles size={13} />
+            <span>AMKS Retail POS • Management Portal</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+            Store Performance Overview
+          </h1>
+          <p className="text-slate-300 text-sm mt-1 max-w-lg">
+            Monitor real-time sales revenue, inventory health, vendor payables, and store expenses.
+          </p>
+        </div>
+
+        <div className="relative z-10 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => onNavigate('pos')}
+            className="px-5 py-3.5 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-600/30 transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <ShoppingCart size={18} />
+            <span>Open POS Counter</span>
+            <ArrowRight size={16} />
+          </button>
+        </div>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      {/* KPI Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
         <StatCard
           label="Today's Sales"
           value={loading ? '...' : formatPrice(stats.todaySales, currencySymbol)}
-          icon={<TrendingUp size={20} />}
-          color="bg-blue-50 text-blue-700"
+          sub="Gross revenue"
+          icon={<TrendingUp size={18} />}
+          color="bg-emerald-50 text-emerald-600 border-emerald-100"
         />
         <StatCard
           label="Today's Invoices"
           value={loading ? '...' : String(stats.todayInvoiceCount)}
-          icon={<FileText size={20} />}
-          color="bg-emerald-50 text-emerald-700"
+          sub="Customer orders"
+          icon={<FileText size={18} />}
+          color="bg-blue-50 text-blue-600 border-blue-100"
         />
         <StatCard
-          label="Total Products"
+          label="Active Products"
           value={loading ? '...' : String(stats.totalProducts)}
-          icon={<Package size={20} />}
-          color="bg-slate-50 text-slate-700"
+          sub="Catalog items"
+          icon={<Package size={18} />}
+          color="bg-purple-50 text-purple-600 border-purple-100"
         />
         <StatCard
           label="Total Units"
-          value={loading ? '...' : String(stats.totalUnits)}
-          icon={<Boxes size={20} />}
-          color="bg-indigo-50 text-indigo-700"
+          value={loading ? '...' : stats.totalUnits.toLocaleString()}
+          sub="Physical stock"
+          icon={<Boxes size={18} />}
+          color="bg-indigo-50 text-indigo-600 border-indigo-100"
         />
         <StatCard
           label="Low Stock"
           value={loading ? '...' : String(stats.lowStockCount)}
-          icon={<AlertTriangle size={20} />}
-          color="bg-amber-50 text-amber-700"
+          sub="Restock needed"
+          icon={<AlertTriangle size={18} />}
+          color="bg-amber-50 text-amber-600 border-amber-100"
+          alert={stats.lowStockCount > 0}
         />
         <StatCard
           label="Out of Stock"
           value={loading ? '...' : String(stats.outOfStockCount)}
-          icon={<XCircle size={20} />}
-          color="bg-red-50 text-red-700"
+          sub="Zero inventory"
+          icon={<XCircle size={18} />}
+          color="bg-rose-50 text-rose-600 border-rose-100"
+          alert={stats.outOfStockCount > 0}
         />
       </div>
 
-      {/* Quick actions */}
-      <div className="mb-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">Quick Actions</h2>
-        <div className="flex flex-wrap gap-3">
-          {quickActions.map((action) => {
+      {/* Structured Quick Actions Navigation */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            Quick Modules Navigation
+          </h2>
+          <span className="text-xs text-slate-400">Click any card to jump directly to module</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {actionCards.map((action) => {
             const Icon = action.icon;
             return (
               <button
-                key={action.label}
+                key={action.title}
+                type="button"
                 onClick={() => onNavigate(action.page)}
-                className={`${action.color} text-white px-4 py-3 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors`}
+                className={`p-4.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition-all text-left flex items-start justify-between group cursor-pointer hover:border-blue-300`}
               >
-                <Icon size={18} />
-                {action.label}
+                <div className="flex items-start gap-3.5">
+                  <div
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border transition-transform group-hover:scale-105 ${action.color}`}
+                  >
+                    <Icon size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
+                        {action.title}
+                      </h3>
+                      <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                        {action.badge}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">{action.desc}</p>
+                  </div>
+                </div>
+                <div className="text-slate-300 group-hover:text-blue-600 transition-colors pt-1">
+                  <ArrowRight size={16} />
+                </div>
               </button>
             );
           })}
@@ -162,21 +277,32 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 function StatCard({
   label,
   value,
+  sub,
   icon,
   color,
+  alert = false,
 }: {
   label: string;
   value: string;
+  sub: string;
   icon: React.ReactNode;
   color: string;
+  alert?: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${color}`}>
-        {icon}
+    <div
+      className={`bg-white rounded-2xl border p-4 shadow-xs transition-all hover:border-slate-300 ${
+        alert ? 'border-amber-200/80' : 'border-slate-200/80'
+      }`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+        <div className={`w-8 h-8 rounded-xl flex items-center justify-center border ${color}`}>
+          {icon}
+        </div>
       </div>
-      <div className="text-2xl font-bold text-slate-900">{value}</div>
-      <div className="text-xs text-slate-500 mt-1">{label}</div>
+      <div className="text-xl font-black text-slate-900 tracking-tight">{value}</div>
+      <div className="text-[11px] text-slate-400 mt-0.5 font-medium">{sub}</div>
     </div>
   );
 }
