@@ -16,6 +16,9 @@ import {
   Lock,
   PanelLeftClose,
   PanelLeftOpen,
+  Shield,
+  ArrowLeft,
+  ExternalLink,
 } from 'lucide-react';
 import type { Page } from '@/types';
 import { Dashboard } from '@/pages/Dashboard';
@@ -25,15 +28,16 @@ import { BarcodeLabels } from '@/pages/BarcodeLabels';
 import { Sales } from '@/pages/Sales';
 import { SettingsPage } from '@/pages/Settings';
 import { isSupabaseConfigured, saveSupabaseConfig, supabaseUrl, supabase } from '@/lib/supabase';
-import { getIsAuthenticated, clearSessionAuthentication } from '@/lib/auth';
+import { getIsAdminAuthenticated, clearAdminSessionAuthentication } from '@/lib/auth';
 import { LoginScreen } from '@/components/LoginScreen';
 
-const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
+type AdminSection = 'dashboard' | 'products' | 'barcodes' | 'sales' | 'settings';
+
+const ADMIN_NAV_ITEMS: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'pos', label: 'New Sale / POS', icon: ShoppingCart },
   { id: 'products', label: 'Products / Inventory', icon: Package },
   { id: 'barcodes', label: 'Barcode Labels', icon: Barcode },
-  { id: 'sales', label: 'Sales', icon: Receipt },
+  { id: 'sales', label: 'Sales History', icon: Receipt },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -48,9 +52,36 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;`;
 
+function parseRoute(): { isAdmin: boolean; adminPage: AdminSection } {
+  if (typeof window === 'undefined') {
+    return { isAdmin: false, adminPage: 'dashboard' };
+  }
+  const path = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase();
+
+  const isCurrentAdmin = path.startsWith('/admin') || hash.startsWith('#/admin');
+
+  let adminPage: AdminSection = 'dashboard';
+  const fullPath = path.startsWith('/admin') ? path : hash.replace('#', '');
+
+  if (fullPath.includes('/products')) {
+    adminPage = 'products';
+  } else if (fullPath.includes('/barcodes')) {
+    adminPage = 'barcodes';
+  } else if (fullPath.includes('/sales')) {
+    adminPage = 'sales';
+  } else if (fullPath.includes('/settings')) {
+    adminPage = 'settings';
+  } else if (fullPath.includes('/dashboard')) {
+    adminPage = 'dashboard';
+  }
+
+  return { isAdmin: isCurrentAdmin, adminPage };
+}
+
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(getIsAuthenticated);
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(getIsAdminAuthenticated);
+  const [route, setRoute] = useState(parseRoute);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -59,6 +90,20 @@ function App() {
     return false;
   });
 
+  const [currentTime, setCurrentTime] = useState<string>('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTime(
+        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const toggleSidebarCollapsed = () => {
     setSidebarCollapsed((prev) => {
       const next = !prev;
@@ -66,6 +111,7 @@ function App() {
       return next;
     });
   };
+
   const [showDbModal, setShowDbModal] = useState(false);
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
@@ -73,22 +119,44 @@ function App() {
   const [dbUrl, setDbUrl] = useState(supabaseUrl || '');
   const [dbKey, setDbKey] = useState('');
 
-  const navigate = useCallback((page: Page) => {
-    setCurrentPage(page);
-    setSidebarOpen(false);
+  // Routing helper
+  const navigateTo = useCallback((path: string) => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState(null, '', path);
+      setRoute(parseRoute());
+      setSidebarOpen(false);
+    }
   }, []);
 
+  // Listen to browser navigation (back/forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      setRoute(parseRoute());
+      setSidebarOpen(false);
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
+
+  // F2 keyboard shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
-        e.preventDefault();
-        navigate('pos');
+        if (route.isAdmin) {
+          e.preventDefault();
+          navigateTo('/');
+        }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [navigate]);
+  }, [route.isAdmin, navigateTo]);
 
+  // Check Supabase connection on load
   useEffect(() => {
     if (isSupabaseConfigured) {
       supabase
@@ -127,359 +195,540 @@ function App() {
     setTimeout(() => setCopiedSql(false), 2000);
   }
 
-  function handleLockTerminal() {
-    clearSessionAuthentication();
-    setIsAuthenticated(false);
+  function handleLockAdmin() {
+    clearAdminSessionAuthentication();
+    setIsAdminAuthenticated(false);
   }
 
-  if (!isAuthenticated) {
-    return <LoginScreen onUnlock={() => setIsAuthenticated(true)} />;
-  }
+  // Dashboard quick-actions handler
+  const handleDashboardNavigate = (page: Page) => {
+    if (page === 'pos') {
+      navigateTo('/');
+    } else {
+      navigateTo(`/admin/${page}`);
+    }
+  };
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar */}
-      <aside
-        className={`
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-          fixed lg:sticky top-0 left-0 z-50 h-screen bg-slate-900 text-white flex flex-col shrink-0
-          transition-all duration-300 ease-in-out print:hidden
-          ${
-            sidebarCollapsed
-              ? 'lg:-ml-64 lg:w-64 lg:opacity-0 lg:pointer-events-none'
-              : 'lg:translate-x-0 w-64 opacity-100'
-          }
-        `}
-      >
-        <div className="px-6 py-5 border-b border-slate-700 flex items-center justify-between">
-          <div>
-            <div className="text-2xl font-bold tracking-tight">AMKS</div>
-            <div className="text-xs text-slate-400 mt-0.5">by AMKAS International</div>
-          </div>
-          <button
-            type="button"
-            onClick={toggleSidebarCollapsed}
-            className="hidden lg:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Hide Sidebar"
-          >
-            <PanelLeftClose size={18} />
-          </button>
-        </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentPage === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => navigate(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <Icon size={18} />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Lock Terminal Action */}
-        <div className="px-3 py-2 border-t border-slate-800">
-          <button
-            onClick={handleLockTerminal}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-slate-800/80 transition-colors cursor-pointer"
-            title="Lock POS Terminal"
-          >
-            <Lock size={15} />
-            <span>Lock Terminal</span>
-          </button>
-        </div>
-
-        {/* Database connection status */}
-        <div className="px-4 py-3 border-t border-slate-700 text-xs">
-          {isSupabaseConfigured ? (
-            <div>
-              <div className="flex items-center justify-between text-emerald-400">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Supabase Connected
-                </span>
-              </div>
-              {dbError && (
-                <button
-                  onClick={() => setShowSqlModal(true)}
-                  className="mt-1.5 text-red-400 hover:text-red-300 font-medium text-[11px] flex items-center gap-1 cursor-pointer"
-                >
-                  <AlertTriangle size={12} /> Fix Permissions
-                </button>
-              )}
-            </div>
-          ) : (
-            <div>
-              <div className="flex items-center justify-between mb-1.5 text-amber-400">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                  Local / Demo Mode
-                </span>
-              </div>
-              <button
-                onClick={() => setShowDbModal(true)}
-                className="w-full text-center py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium text-[11px] transition-colors cursor-pointer"
-              >
-                Connect Supabase
-              </button>
-            </div>
-          )}
-        </div>
-      </aside>
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden print:hidden"
-          onClick={() => setSidebarOpen(false)}
+  // Render Admin Section
+  if (route.isAdmin) {
+    if (!isAdminAuthenticated) {
+      return (
+        <LoginScreen
+          onUnlock={() => setIsAdminAuthenticated(true)}
+          onBackToPos={() => navigateTo('/')}
         />
-      )}
+      );
+    }
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
-        {/* Desktop retractable toggle header */}
-        <header className="hidden lg:flex items-center justify-between px-6 py-2.5 bg-white border-b border-gray-200/80 print:hidden shadow-2xs">
-          <div className="flex items-center gap-3">
+    return (
+      <div className="min-h-screen bg-gray-50 flex">
+        {/* Admin Sidebar */}
+        <aside
+          className={`
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            fixed lg:sticky top-0 left-0 z-50 h-screen bg-slate-900 text-white flex flex-col shrink-0
+            transition-all duration-300 ease-in-out print:hidden
+            ${
+              sidebarCollapsed
+                ? 'lg:-ml-64 lg:w-64 lg:opacity-0 lg:pointer-events-none'
+                : 'lg:translate-x-0 w-64 opacity-100'
+            }
+          `}
+        >
+          <div className="px-6 py-5 border-b border-slate-700 flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-bold tracking-tight text-white">AMKS</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-600/30 text-blue-400 border border-blue-500/30">
+                  Admin
+                </span>
+              </div>
+              <div className="text-xs text-slate-400 mt-0.5">Management Portal</div>
+            </div>
             <button
               type="button"
               onClick={toggleSidebarCollapsed}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                sidebarCollapsed
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
-              }`}
-              title={sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
+              className="hidden lg:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Hide Sidebar"
             >
-              {sidebarCollapsed ? (
-                <>
-                  <PanelLeftOpen size={17} className="text-blue-600" />
-                  <span>Show Sidebar</span>
-                </>
-              ) : (
-                <>
-                  <PanelLeftClose size={17} />
-                  <span>Hide Sidebar</span>
-                </>
-              )}
+              <PanelLeftClose size={18} />
             </button>
-            <span className="text-xs text-slate-400 font-medium border-l border-slate-200 pl-3">
-              AMKS POS Terminal
-            </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Quick Exit to POS */}
+          <div className="px-3 pt-3">
             <button
-              type="button"
-              onClick={handleLockTerminal}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-              title="Lock Terminal"
+              onClick={() => navigateTo('/')}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/30 transition-all cursor-pointer group"
             >
-              <Lock size={13} />
-              <span>Lock Terminal</span>
-            </button>
-          </div>
-        </header>
-
-        {/* Mobile header */}
-        <header className="lg:hidden bg-slate-900 text-white px-4 py-3 flex items-center justify-between print:hidden">
-          <button onClick={() => setSidebarOpen(!sidebarOpen)}>
-            {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
-          <span className="font-bold text-lg">AMKS</span>
-          <button
-            onClick={handleLockTerminal}
-            className="p-1.5 text-slate-400 hover:text-red-400 transition-colors"
-            title="Lock Terminal"
-          >
-            <Lock size={18} />
-          </button>
-        </header>
-
-        {/* Database Permission Error Banner */}
-        {dbError?.isPermissionError && (
-          <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 text-xs text-red-900 flex items-center justify-between print:hidden">
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={16} className="text-red-600 flex-shrink-0" />
-              <span>
-                <strong>Database Permission Required:</strong> PostgreSQL tables exist in Supabase,
-                but table permissions (GRANT) have not been granted to the <code>anon</code> role.
+              <ShoppingCart size={17} className="group-hover:scale-110 transition-transform" />
+              <span>New Sale / POS</span>
+              <span className="ml-auto text-[11px] bg-blue-700/60 px-1.5 py-0.5 rounded text-blue-200">
+                F2
               </span>
-            </div>
-            <button
-              onClick={() => setShowSqlModal(true)}
-              className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded font-medium text-xs ml-3 transition-colors flex-shrink-0"
-            >
-              Fix in Supabase (View SQL)
             </button>
           </div>
+
+          {/* Admin Navigation */}
+          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+            <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              Administration
+            </div>
+            {ADMIN_NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const isActive = route.adminPage === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => navigateTo(`/admin/${item.id}`)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                    isActive
+                      ? 'bg-slate-800 text-blue-400 border-l-4 border-blue-500 pl-2'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Icon size={18} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Lock Admin / Sign out */}
+          <div className="px-3 py-2 border-t border-slate-800">
+            <button
+              onClick={handleLockAdmin}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-slate-800/80 transition-colors cursor-pointer"
+              title="Lock Admin Portal"
+            >
+              <Lock size={15} />
+              <span>Lock Admin Session</span>
+            </button>
+          </div>
+
+          {/* Database connection status */}
+          <div className="px-4 py-3 border-t border-slate-700 text-xs">
+            {isSupabaseConfigured ? (
+              <div>
+                <div className="flex items-center justify-between text-emerald-400">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Supabase Connected
+                  </span>
+                </div>
+                {dbError && (
+                  <button
+                    onClick={() => setShowSqlModal(true)}
+                    className="mt-1.5 text-red-400 hover:text-red-300 font-medium text-[11px] flex items-center gap-1 cursor-pointer"
+                  >
+                    <AlertTriangle size={12} /> Fix Permissions
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-1.5 text-amber-400">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    Local / Demo Mode
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowDbModal(true)}
+                  className="w-full text-center py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded font-medium text-[11px] transition-colors cursor-pointer"
+                >
+                  Connect Supabase
+                </button>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden print:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
         )}
 
-        {/* Local mode alert banner */}
-        {!isSupabaseConfigured && (
-          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-800 flex items-center justify-between print:hidden">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              <span>
-                <strong>Local Mode Active:</strong> Data is currently saved to local storage.
-              </span>
+        {/* Main Admin content area */}
+        <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
+          {/* Admin Header */}
+          <header className="hidden lg:flex items-center justify-between px-6 py-2.5 bg-white border-b border-gray-200/80 print:hidden shadow-2xs">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={toggleSidebarCollapsed}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
+                  sidebarCollapsed
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent'
+                }`}
+                title={sidebarCollapsed ? 'Show Sidebar' : 'Hide Sidebar'}
+              >
+                {sidebarCollapsed ? (
+                  <>
+                    <PanelLeftOpen size={17} className="text-blue-600" />
+                    <span>Show Menu</span>
+                  </>
+                ) : (
+                  <>
+                    <PanelLeftClose size={17} />
+                    <span>Hide Menu</span>
+                  </>
+                )}
+              </button>
+              <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Admin Panel
+                </span>
+                <span className="text-xs text-slate-400">/</span>
+                <span className="text-xs text-slate-500 capitalize">
+                  {route.adminPage === 'barcodes' ? 'Barcode Labels' : route.adminPage}
+                </span>
+              </div>
             </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigateTo('/')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                title="Go to POS Terminal"
+              >
+                <ShoppingCart size={14} />
+                <span>Go to POS Terminal</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleLockAdmin}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                title="Lock Admin Portal"
+              >
+                <Lock size={13} />
+                <span>Lock Admin</span>
+              </button>
+            </div>
+          </header>
+
+          {/* Mobile Admin header */}
+          <header className="lg:hidden bg-slate-900 text-white px-4 py-3 flex items-center justify-between print:hidden">
+            <button onClick={() => setSidebarOpen(!sidebarOpen)}>
+              {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+            <span className="font-bold text-base flex items-center gap-1.5">
+              <span>AMKS Admin</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigateTo('/')}
+                className="p-1.5 text-blue-400 hover:text-blue-300 transition-colors"
+                title="Go to POS"
+              >
+                <ShoppingCart size={20} />
+              </button>
+              <button
+                onClick={handleLockAdmin}
+                className="p-1.5 text-slate-400 hover:text-red-400 transition-colors"
+                title="Lock Admin"
+              >
+                <Lock size={18} />
+              </button>
+            </div>
+          </header>
+
+          {/* Database Permission Error Banner */}
+          {dbError?.isPermissionError && (
+            <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 text-xs text-red-900 flex items-center justify-between print:hidden">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-red-600 flex-shrink-0" />
+                <span>
+                  <strong>Database Permission Required:</strong> PostgreSQL tables exist in Supabase,
+                  but table permissions (GRANT) have not been granted to the <code>anon</code> role.
+                </span>
+              </div>
+              <button
+                onClick={() => setShowSqlModal(true)}
+                className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded font-medium text-xs ml-3 transition-colors flex-shrink-0 cursor-pointer"
+              >
+                Fix in Supabase (View SQL)
+              </button>
+            </div>
+          )}
+
+          {/* Main admin pages */}
+          <main className="flex-1 p-4 lg:p-6 print:p-0">
+            {route.adminPage === 'dashboard' && <Dashboard onNavigate={handleDashboardNavigate} />}
+            {route.adminPage === 'products' && <Products />}
+            {route.adminPage === 'barcodes' && <BarcodeLabels />}
+            {route.adminPage === 'sales' && <Sales />}
+            {route.adminPage === 'settings' && <SettingsPage />}
+          </main>
+        </div>
+
+        {/* Database Modals */}
+        {renderModals()}
+      </div>
+    );
+  }
+
+  // Render Main POS Screen (Default / Root view)
+  return (
+    <div className="min-h-screen bg-slate-100/70 flex flex-col">
+      {/* Sleek POS Top Bar */}
+      <header className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2.5 flex items-center justify-between shadow-2xs print:hidden">
+        {/* Brand & Terminal identification */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-sm tracking-wider shadow-sm">
+              A
+            </div>
+            <div>
+              <div className="text-base font-bold text-slate-900 tracking-tight leading-none">
+                AMKS POS
+              </div>
+              <div className="text-[10px] text-slate-400 font-medium">Counter Terminal</div>
+            </div>
+          </div>
+
+          <div className="hidden md:flex items-center gap-2 pl-4 border-l border-slate-200">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Active Register
+            </span>
+            {currentTime && (
+              <span className="text-xs font-mono font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                {currentTime}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Center shortcuts hint on medium+ screens */}
+        <div className="hidden lg:flex items-center gap-2 text-xs text-slate-500 font-medium">
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[11px] font-mono text-slate-700 font-semibold">
+            F2
+          </span>
+          <span>Focus Scanner</span>
+          <span className="text-slate-300">•</span>
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[11px] font-mono text-slate-700 font-semibold">
+            F4
+          </span>
+          <span>Complete Sale</span>
+        </div>
+
+        {/* Right actions: DB indicator & Admin Portal access */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {isSupabaseConfigured ? (
+            <div
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg cursor-default"
+              title="Cloud Database Connected"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span>Supabase</span>
+            </div>
+          ) : (
             <button
               onClick={() => setShowDbModal(true)}
-              className="underline hover:text-amber-950 font-medium ml-2"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer"
+              title="Local demo mode active. Click to connect Supabase."
             >
-              Connect Supabase Database
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              <span>Local Mode</span>
             </button>
+          )}
+
+          {/* Admin Portal Button */}
+          <button
+            type="button"
+            onClick={() => navigateTo('/admin')}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white shadow-sm hover:shadow transition-all cursor-pointer"
+            title="Open Admin Portal (Protected)"
+          >
+            <Shield size={14} className="text-blue-400" />
+            <span>Admin Portal</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Database Permission Error Banner */}
+      {dbError?.isPermissionError && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-xs text-red-900 flex items-center justify-between print:hidden">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={15} className="text-red-600 flex-shrink-0" />
+            <span>
+              <strong>Database Permission Required:</strong> Table permissions not granted to anon role.
+            </span>
+          </div>
+          <button
+            onClick={() => setShowSqlModal(true)}
+            className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded font-medium text-xs ml-3 transition-colors flex-shrink-0 cursor-pointer"
+          >
+            Fix SQL
+          </button>
+        </div>
+      )}
+
+      {/* Local Mode Notice */}
+      {!isSupabaseConfigured && (
+        <div className="bg-amber-50/80 border-b border-amber-200/80 px-4 py-1.5 text-xs text-amber-800 flex items-center justify-between print:hidden">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span>Data is being saved to local browser storage.</span>
+          </div>
+          <button
+            onClick={() => setShowDbModal(true)}
+            className="underline hover:text-amber-950 font-medium cursor-pointer"
+          >
+            Connect Supabase
+          </button>
+        </div>
+      )}
+
+      {/* Main POS Content */}
+      <main className="flex-1 p-3 sm:p-5 print:p-0">
+        <POS />
+      </main>
+
+      {/* Database Modals */}
+      {renderModals()}
+    </div>
+  );
+
+  function renderModals() {
+    return (
+      <>
+        {/* SQL Permissions Modal */}
+        {showSqlModal && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full p-6 space-y-4">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center gap-2 text-red-600 font-bold text-base">
+                  <AlertTriangle size={20} />
+                  Grant Supabase Table Permissions
+                </div>
+                <button
+                  onClick={() => setShowSqlModal(false)}
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Your Supabase database returned <code>permission denied for table products (code 42501)</code>.
+                To allow your POS system to read and write data, open your{' '}
+                <a
+                  href="https://supabase.com/dashboard"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 font-semibold underline inline-flex items-center gap-0.5"
+                >
+                  Supabase Dashboard <ExternalLink size={11} />
+                </a>{' '}
+                and run the following SQL query in the SQL Editor:
+              </p>
+
+              <div className="relative bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-xs overflow-x-auto">
+                <pre>{FIX_PERMISSIONS_SQL}</pre>
+                <button
+                  onClick={handleCopySql}
+                  className="absolute top-2 right-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-sans font-medium flex items-center gap-1.5 transition-colors shadow cursor-pointer"
+                >
+                  {copiedSql ? <Check size={14} /> : <Copy size={14} />}
+                  {copiedSql ? 'Copied!' : 'Copy SQL'}
+                </button>
+              </div>
+
+              <div className="pt-2 flex justify-between items-center text-xs">
+                <span className="text-slate-500">
+                  After running the SQL in Supabase, click Reload.
+                </span>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-xs transition-colors cursor-pointer"
+                >
+                  Reload Page
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
-        <main className="flex-1 p-4 lg:p-6 print:p-0">
-          {currentPage === 'dashboard' && <Dashboard onNavigate={navigate} />}
-          {currentPage === 'pos' && <POS />}
-          {currentPage === 'products' && <Products />}
-          {currentPage === 'barcodes' && <BarcodeLabels />}
-          {currentPage === 'sales' && <Sales />}
-          {currentPage === 'settings' && <SettingsPage />}
-        </main>
-      </div>
-
-      {/* SQL Permissions Modal */}
-      {showSqlModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-xl w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2 text-red-600 font-bold text-base">
-                <AlertTriangle size={20} />
-                Grant Supabase Table Permissions
-              </div>
-              <button
-                onClick={() => setShowSqlModal(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Your Supabase database returned <code>permission denied for table products (code 42501)</code>.
-              To allow your POS system to read and write data, open your{' '}
-              <a
-                href="https://supabase.com/dashboard"
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-600 font-semibold underline"
-              >
-                Supabase Dashboard &rarr; SQL Editor
-              </a>{' '}
-              and run the following SQL query:
-            </p>
-
-            <div className="relative bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-xs overflow-x-auto">
-              <pre>{FIX_PERMISSIONS_SQL}</pre>
-              <button
-                onClick={handleCopySql}
-                className="absolute top-2 right-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-sans font-medium flex items-center gap-1.5 transition-colors shadow"
-              >
-                {copiedSql ? <Check size={14} /> : <Copy size={14} />}
-                {copiedSql ? 'Copied!' : 'Copy SQL'}
-              </button>
-            </div>
-
-            <div className="pt-2 flex justify-between items-center text-xs">
-              <span className="text-slate-500">
-                After running the SQL in Supabase, click Reload.
-              </span>
-              <button
-                onClick={() => window.location.reload()}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-xs transition-colors"
-              >
-                Reload Page
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Connect Supabase modal */}
-      {showDbModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2 text-slate-900 font-bold">
-                <Database size={20} className="text-blue-600" />
-                Connect Supabase Database
-              </div>
-              <button
-                onClick={() => setShowDbModal(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600">
-              Enter your Supabase project credentials to synchronize data with your Supabase
-              database. You can also paste them directly into your <code>.env</code> file.
-            </p>
-
-            <form onSubmit={handleSaveDb} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Project URL (e.g. https://xyz.supabase.co)
-                </label>
-                <input
-                  type="url"
-                  required
-                  value={dbUrl}
-                  onChange={(e) => setDbUrl(e.target.value)}
-                  placeholder="https://your-project.supabase.co"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Anon Public Key
-                </label>
-                <input
-                  type="password"
-                  required
-                  value={dbKey}
-                  onChange={(e) => setDbKey(e.target.value)}
-                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6Ik..."
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="pt-2 flex gap-2">
+        {/* Connect Supabase modal */}
+        {showDbModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center gap-2 text-slate-900 font-bold">
+                  <Database size={20} className="text-blue-600" />
+                  Connect Supabase Database
+                </div>
                 <button
-                  type="submit"
-                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <CheckCircle size={16} /> Save & Connect
-                </button>
-                <button
-                  type="button"
                   onClick={() => setShowDbModal(false)}
-                  className="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-sm transition-colors"
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
-                  Cancel
+                  <X size={20} />
                 </button>
               </div>
-            </form>
+
+              <p className="text-xs text-slate-600">
+                Enter your Supabase project credentials to synchronize data with your Supabase
+                database. You can also paste them directly into your <code>.env</code> file.
+              </p>
+
+              <form onSubmit={handleSaveDb} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Project URL (e.g. https://xyz.supabase.co)
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    value={dbUrl}
+                    onChange={(e) => setDbUrl(e.target.value)}
+                    placeholder="https://your-project.supabase.co"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Anon Public Key
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={dbKey}
+                    onChange={(e) => setDbKey(e.target.value)}
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6Ik..."
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="pt-2 flex gap-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <CheckCircle size={16} /> Save & Connect
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDbModal(false)}
+                    className="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-sm transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+        )}
+      </>
+    );
+  }
 }
 
 export default App;

@@ -1,29 +1,36 @@
-const SYSTEM_PASSWORD = 'amksamks000';
-const AUTH_KEY = 'amks_pos_authenticated';
+const ADMIN_PASSWORD = 'Amks04021999!';
+const ADMIN_AUTH_KEY = 'amks_admin_authenticated';
 
-export function verifyPassword(inputPassword: string): boolean {
-  return inputPassword === SYSTEM_PASSWORD;
+export function verifyAdminPassword(inputPassword: string): boolean {
+  return inputPassword === ADMIN_PASSWORD;
 }
 
-export function getIsAuthenticated(): boolean {
+export function getIsAdminAuthenticated(): boolean {
   if (typeof window === 'undefined') return false;
   return (
-    sessionStorage.getItem(AUTH_KEY) === 'true' ||
-    localStorage.getItem(AUTH_KEY) === 'true'
+    sessionStorage.getItem(ADMIN_AUTH_KEY) === 'true' ||
+    localStorage.getItem(ADMIN_AUTH_KEY) === 'true'
   );
 }
 
-export function setSessionAuthenticated(remember = true): void {
+export function setAdminSessionAuthenticated(remember = true): void {
   if (typeof window === 'undefined') return;
   if (remember) {
-    localStorage.setItem(AUTH_KEY, 'true');
+    localStorage.setItem(ADMIN_AUTH_KEY, 'true');
   } else {
-    sessionStorage.setItem(AUTH_KEY, 'true');
+    sessionStorage.setItem(ADMIN_AUTH_KEY, 'true');
   }
 }
 
-export function clearSessionAuthentication(): void {
+export function clearAdminSessionAuthentication(): void {
   if (typeof window === 'undefined') return;
-  sessionStorage.removeItem(AUTH_KEY);
-  localStorage.removeItem(AUTH_KEY);
+  sessionStorage.removeItem(ADMIN_AUTH_KEY);
+  localStorage.removeItem(ADMIN_AUTH_KEY);
 }
+
+// Backward compatibility aliases
+export const verifyPassword = verifyAdminPassword;
+export const getIsAuthenticated = getIsAdminAuthenticated;
+export const setSessionAuthenticated = setAdminSessionAuthenticated;
+export const clearSessionAuthentication = clearAdminSessionAuthentication;
+
