@@ -58,26 +58,32 @@ function parseRoute(): { isAdmin: boolean; adminPage: AdminSection } {
   }
   const path = window.location.pathname.toLowerCase();
   const hash = window.location.hash.toLowerCase();
+  const search = window.location.search.toLowerCase();
 
-  const isCurrentAdmin = path.startsWith('/admin') || hash.startsWith('#/admin');
+  const isCurrentAdmin =
+    path.startsWith('/admin') ||
+    hash.startsWith('#/admin') ||
+    hash.startsWith('#admin') ||
+    search.includes('admin');
 
   let adminPage: AdminSection = 'dashboard';
-  const fullPath = path.startsWith('/admin') ? path : hash.replace('#', '');
+  const full = `${path} ${hash} ${search}`;
 
-  if (fullPath.includes('/products')) {
+  if (full.includes('products')) {
     adminPage = 'products';
-  } else if (fullPath.includes('/barcodes')) {
+  } else if (full.includes('barcodes')) {
     adminPage = 'barcodes';
-  } else if (fullPath.includes('/sales')) {
+  } else if (full.includes('sales')) {
     adminPage = 'sales';
-  } else if (fullPath.includes('/settings')) {
+  } else if (full.includes('settings')) {
     adminPage = 'settings';
-  } else if (fullPath.includes('/dashboard')) {
+  } else if (full.includes('dashboard')) {
     adminPage = 'dashboard';
   }
 
   return { isAdmin: isCurrentAdmin, adminPage };
 }
+
 
 function App() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(getIsAdminAuthenticated);
