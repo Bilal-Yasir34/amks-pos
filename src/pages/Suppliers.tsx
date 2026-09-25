@@ -66,14 +66,14 @@ export function Suppliers() {
   // Filtered suppliers
   const filteredSuppliers = suppliers.filter((sup) => {
     const matchesSearch =
-      sup.name.toLowerCase().includes(search.toLowerCase()) ||
-      sup.city.toLowerCase().includes(search.toLowerCase()) ||
-      sup.phone.toLowerCase().includes(search.toLowerCase()) ||
-      sup.address.toLowerCase().includes(search.toLowerCase());
+      (sup.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (sup.city || '').toLowerCase().includes(search.toLowerCase()) ||
+      (sup.phone || '').toLowerCase().includes(search.toLowerCase()) ||
+      (sup.address || '').toLowerCase().includes(search.toLowerCase());
 
     const matchesCity =
       selectedCity === 'all' ||
-      sup.city.toLowerCase() === selectedCity.toLowerCase();
+      (sup.city || '').toLowerCase() === selectedCity.toLowerCase();
 
     return matchesSearch && matchesCity;
   });
@@ -451,14 +451,6 @@ function SupplierFormModal({ supplier, onClose, onSaved }: SupplierFormModalProp
       setError('City is required.');
       return;
     }
-    if (!phone.trim()) {
-      setError('Phone number is required.');
-      return;
-    }
-    if (!address.trim()) {
-      setError('Address is required.');
-      return;
-    }
 
     setSaving(true);
     try {
@@ -578,7 +570,7 @@ function SupplierFormModal({ supplier, onClose, onSaved }: SupplierFormModalProp
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                Phone Number <span className="text-red-500">*</span>
+                Phone Number <span className="text-slate-400 font-normal lowercase">(optional)</span>
               </label>
               <input
                 type="text"
@@ -586,7 +578,6 @@ function SupplierFormModal({ supplier, onClose, onSaved }: SupplierFormModalProp
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="e.g. +92 300 1234567"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
               />
             </div>
           </div>
@@ -594,7 +585,7 @@ function SupplierFormModal({ supplier, onClose, onSaved }: SupplierFormModalProp
           {/* Address */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-              Physical Address / Factory / Market <span className="text-red-500">*</span>
+              Physical Address / Factory / Market <span className="text-slate-400 font-normal lowercase">(optional)</span>
             </label>
             <textarea
               value={address}
@@ -602,7 +593,6 @@ function SupplierFormModal({ supplier, onClose, onSaved }: SupplierFormModalProp
               rows={2}
               placeholder="e.g. Plot 45, Sector 15, Korangi Industrial Area, Karachi"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              required
             />
           </div>
 

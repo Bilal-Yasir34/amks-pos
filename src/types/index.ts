@@ -22,8 +22,8 @@ export interface Supplier {
   id: string;
   name: string;
   city: string;
-  address: string;
-  phone: string;
+  address?: string;
+  phone?: string;
   notes?: string;
   created_at: string;
   updated_at: string;

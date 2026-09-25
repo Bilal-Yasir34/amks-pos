@@ -544,7 +544,7 @@ function App() {
           <span>Complete Sale</span>
         </div>
 
-        {/* Right actions: DB indicator */}
+        {/* Right actions: DB indicator & Admin Portal access */}
         <div className="flex items-center gap-2 sm:gap-3">
           {isSupabaseConfigured ? (
             <div
@@ -564,6 +564,17 @@ function App() {
               <span>Local Mode</span>
             </button>
           )}
+
+          {/* Admin Portal Button */}
+          <button
+            type="button"
+            onClick={() => navigateTo('/admin')}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white shadow-sm hover:shadow transition-all cursor-pointer"
+            title="Open Admin Portal (Protected)"
+          >
+            <Shield size={14} className="text-blue-400" />
+            <span>Admin Portal</span>
+          </button>
         </div>
       </header>
 

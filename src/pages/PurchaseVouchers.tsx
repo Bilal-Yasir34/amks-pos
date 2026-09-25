@@ -228,9 +228,9 @@ export function PurchaseVouchers() {
       // Search
       const s = search.toLowerCase();
       const matchesSearch =
-        v.supplier.name.toLowerCase().includes(s) ||
-        v.supplier.city.toLowerCase().includes(s) ||
-        v.supplier.phone.toLowerCase().includes(s) ||
+        (v.supplier.name || '').toLowerCase().includes(s) ||
+        (v.supplier.city || '').toLowerCase().includes(s) ||
+        (v.supplier.phone || '').toLowerCase().includes(s) ||
         v.products.some((p) => p.article_name.toLowerCase().includes(s) || p.product_code.toLowerCase().includes(s));
 
       if (!matchesSearch) return false;
