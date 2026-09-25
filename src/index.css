@@ -120,37 +120,92 @@
 
 /* Barcode label print layout */
 @media print {
+  /* Thermal 100mm roll layout: single column, one below another */
+  .barcode-label-grid-thermal {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100mm !important;
+    max-width: 100mm !important;
+    margin: 0 auto !important;
+    padding: 1mm 2mm !important;
+    gap: 3mm !important;
+    background: #fff !important;
+  }
+  .barcode-label-grid-thermal .barcode-label-item {
+    width: 100% !important;
+    max-width: 100mm !important;
+    margin: 0 auto !important;
+    padding: 2.5mm 3mm !important;
+    box-sizing: border-box !important;
+  }
+
+  /* A4 sheet layout: 2 columns */
+  .barcode-label-grid-a4,
   .barcode-label-grid {
     display: grid !important;
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 5mm !important;
+    gap: 4mm !important;
     padding: 2mm !important;
     width: 100% !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
   }
+
   .barcode-label-item {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
-    border: 1px dashed #94a3b8 !important;
-    border-radius: 4px !important;
-    padding: 3mm !important;
     text-align: center !important;
     background: #fff !important;
     color: #000 !important;
     box-shadow: none !important;
   }
+
+  .barcode-label-item.has-border {
+    border: 1px dashed #64748b !important;
+    border-radius: 4px !important;
+  }
+
+  .barcode-label-item.no-border {
+    border: none !important;
+    border-radius: 0 !important;
+  }
 }
 
+/* Barcode label screen styles */
+.barcode-label-grid-thermal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100mm;
+  margin: 0 auto;
+  gap: 10px;
+}
+
+.barcode-label-grid-a4,
 .barcode-label-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  gap: 14px;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
 }
 
 .barcode-label-item {
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-  padding: 14px;
   text-align: center;
   background: white;
+  padding: 12px;
+  transition: all 0.15s ease;
 }
+
+.barcode-label-item.has-border {
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+}
+
+.barcode-label-item.no-border {
+  border: 1px solid #f1f5f9;
+  border-radius: 8px;
+}
+
 

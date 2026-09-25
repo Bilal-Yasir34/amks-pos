@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Printer, X, CheckSquare, Square } from 'lucide-react';
+import { Search, Printer, X, CheckSquare, Square, Receipt, FileText } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { BarcodeDisplay } from '@/components/BarcodeDisplay';
 import { getSettings } from '@/lib/settings';
 import { formatPrice } from '@/lib/format';
 import type { Product, Settings } from '@/types';
+
+export type BarcodePrintFormat = 'thermal' | 'a4';
 
 interface LabelConfig {
   showBrand: boolean;
@@ -13,6 +15,7 @@ interface LabelConfig {
   showPrice: boolean;
   showBarcodeNumber: boolean;
   showBarcodeGraphic: boolean;
+  showBorder: boolean;
 }
 
 const DEFAULT_LABEL_CONFIG: LabelConfig = {
@@ -22,6 +25,7 @@ const DEFAULT_LABEL_CONFIG: LabelConfig = {
   showPrice: true,
   showBarcodeNumber: true,
   showBarcodeGraphic: true,
+  showBorder: false,
 };
 
 export function BarcodeLabels() {
@@ -32,7 +36,21 @@ export function BarcodeLabels() {
   const [customBatchCount, setCustomBatchCount] = useState<string>('');
   const [labelConfig, setLabelConfig] = useState<LabelConfig>(DEFAULT_LABEL_CONFIG);
   const [showPreview, setShowPreview] = useState(false);
+  const [activeFormat, setActiveFormat] = useState<BarcodePrintFormat>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('amks_barcode_print_format');
+      if (saved === 'thermal' || saved === 'a4') return saved;
+    }
+    return 'thermal';
+  });
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
+
+  const handleFormatChange = (newFormat: BarcodePrintFormat) => {
+    setActiveFormat(newFormat);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('amks_barcode_print_format', newFormat);
+    }
+  };
 
   useEffect(() => {
     getSettings().then(setSettings);
@@ -120,11 +138,12 @@ export function BarcodeLabels() {
 
   return (
     <>
+      {/* Dynamic print @page rule based on active format: 100mm auto for thermal, A4 for sheet */}
       <style>{`
         @media print {
           @page {
-            size: A4 portrait;
-            margin: 6mm;
+            size: ${activeFormat === 'thermal' ? '100mm auto' : 'A4 portrait'};
+            margin: ${activeFormat === 'thermal' ? '0mm' : '6mm'};
           }
         }
       `}</style>
@@ -343,7 +362,46 @@ export function BarcodeLabels() {
 
         {/* Label settings */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-          <h2 className="font-semibold text-slate-900 mb-4">Label Settings</h2>
+          <h2 className="font-semibold text-slate-900 mb-3">Label Settings</h2>
+
+          {/* Print Format / Size Toggle */}
+          <div className="mb-4 pb-4 border-b border-gray-100">
+            <span className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+              Print Size & Layout
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleFormatChange('thermal')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                  activeFormat === 'thermal'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-white border-gray-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <Receipt size={14} />
+                <span>Thermal (100mm)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFormatChange('a4')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                  activeFormat === 'a4'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-white border-gray-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <FileText size={14} />
+                <span>A4 Sheet</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              {activeFormat === 'thermal'
+                ? '100mm roll size, barcodes stacked one below another'
+                : 'A4 sheet paper, 2 columns grid'}
+            </p>
+          </div>
+
           <div className="space-y-3">
             {(
               [
@@ -351,8 +409,9 @@ export function BarcodeLabels() {
                 { key: 'showArticleName', label: 'Show article name' },
                 { key: 'showProductCode', label: 'Show product code & colour' },
                 { key: 'showPrice', label: 'Show price' },
-                { key: 'showBarcodeNumber', label: 'Show barcode number' },
                 { key: 'showBarcodeGraphic', label: 'Show barcode graphic' },
+                { key: 'showBarcodeNumber', label: 'Show barcode number' },
+                { key: 'showBorder', label: 'Show label border outline' },
               ] as { key: keyof LabelConfig; label: string }[]
             ).map((item) => (
               <label key={item.key} className="flex items-center gap-2 cursor-pointer">
@@ -380,11 +439,19 @@ export function BarcodeLabels() {
       {/* Print preview modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-transparent print:block print:inset-auto">
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col print:max-w-none print:w-auto print:max-h-none print:shadow-none print:rounded-none print:p-0 print:border-none">
+          <div className={`bg-white rounded-xl shadow-xl w-full max-h-[90vh] flex flex-col print:max-w-none print:w-auto print:max-h-none print:shadow-none print:rounded-none print:p-0 print:border-none ${
+            activeFormat === 'thermal' ? 'max-w-md' : 'max-w-4xl'
+          }`}>
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between print:hidden">
               <div>
-                <h3 className="font-semibold text-slate-900">Label Preview ({totalLabels} labels)</h3>
-                <p className="text-xs text-slate-500">Ready to print on standard A4 label paper</p>
+                <h3 className="font-semibold text-slate-900">
+                  Label Preview ({totalLabels} labels)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {activeFormat === 'thermal'
+                    ? '100mm Thermal Roll — barcodes stacked one below another'
+                    : 'Standard A4 Sheet Paper — 2 columns grid'}
+                </p>
               </div>
               <div className="flex gap-2">
                 <button
@@ -404,22 +471,59 @@ export function BarcodeLabels() {
               </div>
             </div>
 
-            <div className="p-5 overflow-y-auto print:p-0 print:overflow-visible">
-              <div className="barcode-label-grid">
+            {/* Print layout format bar (Screen Only) */}
+            <div className="px-5 py-3 bg-slate-50 border-b border-gray-200 flex items-center justify-between print:hidden">
+              <span className="text-xs font-semibold text-slate-600">Print Layout:</span>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleFormatChange('thermal')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    activeFormat === 'thermal'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  <Receipt size={14} />
+                  <span>Thermal Roll (100mm)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFormatChange('a4')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    activeFormat === 'a4'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                  }`}
+                >
+                  <FileText size={14} />
+                  <span>A4 Sheet (2 Col)</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-6 overflow-y-auto print:p-0 print:overflow-visible bg-slate-100/60 print:bg-white flex justify-center">
+              <div
+                className={`w-full ${
+                  activeFormat === 'thermal'
+                    ? 'barcode-label-grid-thermal bg-white p-3 rounded-lg shadow-sm border border-slate-200 print:shadow-none print:border-none print:p-0 print:m-0 print:rounded-none'
+                    : 'barcode-label-grid-a4'
+                }`}
+              >
                 {selectedProducts.map((product) => {
                   const count = selected.get(product.id) || 1;
                   return Array.from({ length: count }).map((_, idx) => (
                     <div
                       key={`${product.id}-${idx}`}
-                      className="barcode-label-item"
+                      className={`barcode-label-item ${labelConfig.showBorder ? 'has-border' : 'no-border'}`}
                     >
                       {labelConfig.showBrand && (
-                        <div className="text-sm font-black text-slate-900 tracking-wider uppercase mb-0.5">
+                        <div className="text-sm font-black text-slate-900 print:text-black tracking-wider uppercase mb-0.5">
                           {settings?.business_name || 'AMKS'}
                         </div>
                       )}
                       {labelConfig.showArticleName && (
-                        <div className="text-xs font-bold text-slate-800 line-clamp-1 mb-0.5">
+                        <div className="text-xs font-bold text-slate-800 print:text-black line-clamp-1 mb-0.5">
                           {product.article_name}
                         </div>
                       )}
@@ -438,7 +542,12 @@ export function BarcodeLabels() {
                       </div>
                       {labelConfig.showBarcodeGraphic && (
                         <div className="flex justify-center mb-0.5">
-                          <BarcodeDisplay value={product.barcode} width={1.4} height={42} displayValue={false} />
+                          <BarcodeDisplay
+                            value={product.barcode}
+                            width={activeFormat === 'thermal' ? 1.6 : 1.4}
+                            height={activeFormat === 'thermal' ? 44 : 42}
+                            displayValue={false}
+                          />
                         </div>
                       )}
                       {labelConfig.showBarcodeNumber && (

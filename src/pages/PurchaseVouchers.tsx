@@ -25,10 +25,14 @@ import {
   RefreshCw,
   TrendingDown,
   Layers,
+  FileSpreadsheet,
+  Printer,
+  Download,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getSettings } from '@/lib/settings';
 import { formatPrice, formatDateTime } from '@/lib/format';
+import { exportToExcel } from '@/lib/excelExport';
 import type { Supplier, Product, SupplierPayment, Settings } from '@/types';
 
 interface SupplierVoucherData {
@@ -68,6 +72,9 @@ export function PurchaseVouchers() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
 
+  // Print Report Modal state
+  const [showPrintReportModal, setShowPrintReportModal] = useState(false);
+
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
@@ -95,41 +102,54 @@ export function PurchaseVouchers() {
 
   const currencySymbol = settings?.currency_symbol ?? 'Rs.';
 
-  // Determine active date range based on preset
+  // Determine active date range based on preset (clean YYYY-MM-DD comparisons)
   const activeDateRange = useMemo(() => {
     if (dateFilterPreset === 'all') return null;
 
     const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
     if (dateFilterPreset === 'today') {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
-      return { start, end, label: 'Today' };
+      const todayStr = toYMD(now);
+      return { start: todayStr, end: todayStr, label: 'Today' };
     }
     if (dateFilterPreset === 'this_week') {
       const day = now.getDay() || 7; // monday is 1
       const startDay = new Date(now);
       startDay.setDate(now.getDate() - day + 1);
-      startDay.setHours(0, 0, 0, 0);
-      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
-      return { start: startDay.toISOString(), end, label: 'This Week' };
+      return { start: toYMD(startDay), end: toYMD(now), label: 'This Week' };
     }
     if (dateFilterPreset === 'this_month') {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
-      return { start, end, label: 'This Month' };
+      const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { start: toYMD(startMonth), end: toYMD(now), label: 'This Month' };
     }
     if (dateFilterPreset === 'custom') {
       if (!startDate && !endDate) return null;
-      const start = startDate ? new Date(`${startDate}T00:00:00`).toISOString() : new Date('2020-01-01').toISOString();
-      const end = endDate ? new Date(`${endDate}T23:59:59.999`).toISOString() : new Date().toISOString();
-      return { start, end, label: `${startDate || 'Start'} to ${endDate || 'Now'}` };
+      return {
+        start: startDate || '2000-01-01',
+        end: endDate || '2099-12-31',
+        label: `${startDate || 'Start'} to ${endDate || 'Now'}`,
+      };
     }
     return null;
   }, [dateFilterPreset, startDate, endDate]);
 
-  // Aggregate voucher data per supplier
+  const isDateInRange = useCallback(
+    (dateVal?: string | null) => {
+      if (!activeDateRange) return true;
+      if (!dateVal) return false;
+      const d = dateVal.includes('T') ? dateVal.split('T')[0] : dateVal.trim();
+      return d >= activeDateRange.start && d <= activeDateRange.end;
+    },
+    [activeDateRange]
+  );
+
+  // Aggregate voucher data per supplier with strict date range filtering ("nothing before that, nothing after that")
   const voucherDataList: SupplierVoucherData[] = useMemo(() => {
-    return suppliers.map((supplier) => {
+    const list: SupplierVoucherData[] = [];
+
+    suppliers.forEach((supplier) => {
       // Find all products purchased from this supplier
       const supplierProducts = products.filter((p) => p.supplier_id === supplier.id);
 
@@ -138,20 +158,24 @@ export function PurchaseVouchers() {
 
       // Filtered payments by date if date filter active
       const relevantPayments = activeDateRange
-        ? supplierPayments.filter(
-            (pay) => pay.payment_date >= activeDateRange.start && pay.payment_date <= activeDateRange.end
-          )
+        ? supplierPayments.filter((pay) => isDateInRange(pay.payment_date || pay.created_at))
         : supplierPayments;
 
       // Filtered products by date if date filter active
       const relevantProducts = activeDateRange
-        ? supplierProducts.filter(
-            (p) => p.created_at >= activeDateRange.start && p.created_at <= activeDateRange.end
-          )
+        ? supplierProducts.filter((p) => isDateInRange(p.created_at))
         : supplierProducts;
 
-      // Calculate total procurement cost of all goods bought from this supplier
-      const totalGoodsCost = supplierProducts.reduce((sum, p) => {
+      // When date range is active, omit suppliers that had zero products and zero payments in that period
+      if (activeDateRange && relevantProducts.length === 0 && relevantPayments.length === 0) {
+        return;
+      }
+
+      const targetProducts = activeDateRange ? relevantProducts : supplierProducts;
+      const targetPayments = activeDateRange ? relevantPayments : supplierPayments;
+
+      // Calculate total procurement cost of all goods bought from this supplier in selected period
+      const totalGoodsCost = targetProducts.reduce((sum, p) => {
         if (p.purchase_cost != null && Number(p.purchase_cost) > 0) {
           return sum + Number(p.purchase_cost);
         }
@@ -162,13 +186,13 @@ export function PurchaseVouchers() {
         return sum;
       }, 0);
 
-      const totalUnitsPurchased = supplierProducts.reduce(
+      const totalUnitsPurchased = targetProducts.reduce(
         (sum, p) => sum + (p.purchase_quantity || p.quantity || 0),
         0
       );
 
-      // Total payments recorded
-      const totalPaid = supplierPayments.reduce((sum, pay) => sum + Number(pay.amount), 0);
+      // Total payments recorded in selected period
+      const totalPaid = targetPayments.reduce((sum, pay) => sum + Number(pay.amount || 0), 0);
 
       const outstandingBalance = Math.max(0, totalGoodsCost - totalPaid);
 
@@ -181,18 +205,20 @@ export function PurchaseVouchers() {
         status = 'pending';
       }
 
-      return {
+      list.push({
         supplier,
-        products: relevantProducts,
-        payments: relevantPayments,
+        products: targetProducts,
+        payments: targetPayments,
         totalGoodsCost,
         totalUnitsPurchased,
         totalPaid,
         outstandingBalance,
         status,
-      };
+      });
     });
-  }, [suppliers, products, payments, activeDateRange]);
+
+    return list;
+  }, [suppliers, products, payments, activeDateRange, isDateInRange]);
 
   // Overall universal aggregates
   const universalSummary = useMemo(() => {
@@ -311,8 +337,64 @@ export function PurchaseVouchers() {
     }
   };
 
+  const handleExportExcel = () => {
+    const periodLabel = activeDateRange ? activeDateRange.label : 'All_Time';
+    const filename = `Purchase_Vouchers_Report_${periodLabel.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+    exportToExcel<SupplierVoucherData>({
+      filename,
+      sheetName: 'Purchase Vouchers',
+      columns: [
+        { header: 'Serial No.', key: 'serial_no', width: 12 },
+        {
+          header: 'Name of the Supplier',
+          key: 'supplier_name',
+          width: 28,
+          formatter: (_, v) => v.supplier.name,
+        },
+        {
+          header: 'City',
+          key: 'city',
+          width: 18,
+          formatter: (_, v) => v.supplier.city || '-',
+        },
+        {
+          header: 'Phone',
+          key: 'phone',
+          width: 18,
+          formatter: (_, v) => v.supplier.phone || '-',
+        },
+        {
+          header: 'Total Payable Amount',
+          key: 'totalGoodsCost',
+          width: 22,
+          formatter: (val) => Number(val || 0),
+        },
+        {
+          header: 'Total Amount Paid',
+          key: 'totalPaid',
+          width: 20,
+          formatter: (val) => Number(val || 0),
+        },
+        {
+          header: 'Pending Payable Amount',
+          key: 'outstandingBalance',
+          width: 24,
+          formatter: (val) => Number(val || 0),
+        },
+        {
+          header: 'Status',
+          key: 'status',
+          width: 14,
+          formatter: (val) => String(val || '').toUpperCase(),
+        },
+      ],
+      data: filteredVouchers,
+    });
+  };
+
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className={`max-w-7xl mx-auto space-y-6 ${showPrintReportModal ? 'print:hidden' : ''}`}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -330,14 +412,39 @@ export function PurchaseVouchers() {
           </p>
         </div>
 
-        <button
-          onClick={loadAllData}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-gray-300 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium transition-colors shadow-2xs cursor-pointer self-start sm:self-auto"
-        >
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-          <span>Refresh</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={filteredVouchers.length === 0}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+            title="Download Excel Spreadsheet Report"
+          >
+            <FileSpreadsheet size={15} />
+            <span>Export to Excel</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowPrintReportModal(true)}
+            disabled={filteredVouchers.length === 0}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+            title="Print accounts payable report"
+          >
+            <Printer size={15} />
+            <span>Print Report</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={loadAllData}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-medium transition-colors shadow-2xs cursor-pointer"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Universal Payment Indicator (Top Highlights Banner) */}
@@ -990,6 +1097,192 @@ export function PurchaseVouchers() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Printable Report Modal */}
+      {showPrintReportModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-transparent print:block print:inset-auto">
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 10mm;
+              }
+            }
+          `}</style>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] flex flex-col print:max-w-none print:w-full print:max-h-none print:shadow-none print:rounded-none print:p-0 print:border-none">
+            {/* Modal Action Bar (Screen Only) */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between print:hidden">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <CreditCard className="text-blue-600" size={18} />
+                  <span>Purchase Voucher & Accounts Payable Report</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Period: <span className="font-semibold text-slate-700">{activeDateRange ? activeDateRange.label : 'All Time'}</span> • {filteredVouchers.length} supplier accounts
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <FileSpreadsheet size={15} />
+                  <span>Export to Excel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Printer size={15} />
+                  <span>Print Report</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPrintReportModal(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Content */}
+            <div className="p-6 overflow-y-auto print:p-0 print:overflow-visible text-slate-900">
+              {/* Report Header for Print & Preview */}
+              <div className="border-b-2 border-slate-900 pb-4 mb-5">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">
+                      {settings?.business_name || 'AMKS'}
+                    </h1>
+                    <div className="text-xs font-medium text-slate-600">
+                      {settings?.company_name || 'AMKAS International'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs uppercase font-bold text-slate-500 tracking-wider">Report</div>
+                    <div className="text-base font-extrabold text-slate-900">Purchase Vouchers Summary</div>
+                    <div className="text-xs text-slate-700 font-mono mt-0.5">
+                      Period: <strong>{activeDateRange ? activeDateRange.label : 'All Time'}</strong>
+                    </div>
+                    <div className="text-[11px] text-slate-400">Generated: {formatDateTime(new Date().toISOString())}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary Cards */}
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Payable Amount</div>
+                  <div className="text-xl font-bold font-mono text-slate-900 mt-1">
+                    {formatPrice(filteredVouchers.reduce((s, v) => s + v.totalGoodsCost, 0), currencySymbol)}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Amount Paid</div>
+                  <div className="text-xl font-bold font-mono text-emerald-700 mt-1">
+                    {formatPrice(filteredVouchers.reduce((s, v) => s + v.totalPaid, 0), currencySymbol)}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Pending Payable Amount</div>
+                  <div className="text-xl font-bold font-mono text-amber-700 mt-1">
+                    {formatPrice(filteredVouchers.reduce((s, v) => s + v.outstandingBalance, 0), currencySymbol)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Report Table */}
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3 w-14 text-center">S.No.</th>
+                      <th className="py-2.5 px-3">Name of the Supplier</th>
+                      <th className="py-2.5 px-3">City / Phone</th>
+                      <th className="py-2.5 px-3 text-right">Total Payable Amount</th>
+                      <th className="py-2.5 px-3 text-right">Total Amount Paid</th>
+                      <th className="py-2.5 px-3 text-right">Pending Payable Amount</th>
+                      <th className="py-2.5 px-3 text-center w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium">
+                    {filteredVouchers.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
+                          No voucher records found within the selected date range.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredVouchers.map((v, idx) => (
+                        <tr key={v.supplier.id} className="hover:bg-slate-50/50">
+                          <td className="py-2.5 px-3 text-center font-mono text-slate-500">{idx + 1}</td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-900">{v.supplier.name}</td>
+                          <td className="py-2.5 px-3 text-slate-600">
+                            {v.supplier.city || '-'} {v.supplier.phone ? `(${v.supplier.phone})` : ''}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900">
+                            {formatPrice(v.totalGoodsCost, currencySymbol)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-700">
+                            {formatPrice(v.totalPaid, currencySymbol)}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-700">
+                            {formatPrice(v.outstandingBalance, currencySymbol)}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                              v.status === 'paid'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : v.status === 'partial'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {v.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  {filteredVouchers.length > 0 && (
+                    <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-slate-900">
+                      <tr>
+                        <td colSpan={3} className="py-3 px-3 uppercase text-right tracking-wider text-[11px]">
+                          Grand Total:
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono">
+                          {formatPrice(filteredVouchers.reduce((s, v) => s + v.totalGoodsCost, 0), currencySymbol)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-emerald-800">
+                          {formatPrice(filteredVouchers.reduce((s, v) => s + v.totalPaid, 0), currencySymbol)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-amber-800">
+                          {formatPrice(filteredVouchers.reduce((s, v) => s + v.outstandingBalance, 0), currencySymbol)}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+
+              {/* Print Footer / Signatures */}
+              <div className="mt-8 pt-6 border-t border-slate-200 hidden print:grid grid-cols-2 text-xs text-slate-500">
+                <div>
+                  <div className="h-10 border-b border-slate-300 w-48 mb-1"></div>
+                  <span>Prepared By / Accounts</span>
+                </div>
+                <div className="text-right flex flex-col items-end">
+                  <div className="h-10 border-b border-slate-300 w-48 mb-1"></div>
+                  <span>Authorized Signature</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, Edit, Barcode, Printer, Power, X, RefreshCw, Save, AlertTriangle, Trash2, Truck, Lock } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Plus, Search, Edit, Barcode, Printer, Power, X, RefreshCw, Save, AlertTriangle, Trash2, Truck, Lock, FileSpreadsheet, Calendar, Download } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getSettings } from '@/lib/settings';
-import { formatPrice, generateBarcodeNumber, generateNextProductCode } from '@/lib/format';
+import { formatPrice, generateBarcodeNumber, generateNextProductCode, formatDateTime } from '@/lib/format';
 import { adjustStock } from '@/lib/sales';
 import { BarcodeDisplay } from '@/components/BarcodeDisplay';
-import type { Product, Settings, Supplier } from '@/types';
+import { exportToExcel } from '@/lib/excelExport';
+import type { Product, Settings, Supplier, InventoryMovement } from '@/types';
 
 export function Products() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -23,6 +24,203 @@ export function Products() {
   const [checkingSales, setCheckingSales] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const lowStockThreshold = settings?.low_stock_threshold ?? 5;
+
+  function getStockStatus(product: Product): 'in_stock' | 'low_stock' | 'out_of_stock' | 'inactive' {
+    if (!product.active) return 'inactive';
+    if (product.quantity <= 0) return 'out_of_stock';
+    if (product.quantity <= lowStockThreshold) return 'low_stock';
+    return 'in_stock';
+  }
+
+  // Stock Report state
+  const [showStockReportModal, setShowStockReportModal] = useState(false);
+  const [reportDatePreset, setReportDatePreset] = useState<'all' | 'today' | 'this_week' | 'this_month' | 'custom'>('all');
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+  const [reportSearch, setReportSearch] = useState('');
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [loadingMovements, setLoadingMovements] = useState(false);
+
+  const loadMovements = useCallback(async () => {
+    setLoadingMovements(true);
+    try {
+      const { data, error } = await supabase
+        .from('inventory_movements')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        setMovements(data as InventoryMovement[]);
+      }
+    } catch (err) {
+      console.error('Failed to load inventory movements:', err);
+    } finally {
+      setLoadingMovements(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showStockReportModal) {
+      loadMovements();
+    }
+  }, [showStockReportModal, loadMovements]);
+
+  // Determine active date range based on preset (clean YYYY-MM-DD comparisons)
+  const activeStockDateRange = useMemo(() => {
+    if (reportDatePreset === 'all') return null;
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    if (reportDatePreset === 'today') {
+      const todayStr = toYMD(now);
+      return { start: todayStr, end: todayStr, label: 'Today' };
+    }
+    if (reportDatePreset === 'this_week') {
+      const day = now.getDay() || 7; // Monday is 1
+      const startDay = new Date(now);
+      startDay.setDate(now.getDate() - day + 1);
+      return { start: toYMD(startDay), end: toYMD(now), label: 'This Week' };
+    }
+    if (reportDatePreset === 'this_month') {
+      const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { start: toYMD(startMonth), end: toYMD(now), label: 'This Month' };
+    }
+    if (reportDatePreset === 'custom') {
+      if (!reportStartDate && !reportEndDate) return null;
+      return {
+        start: reportStartDate || '2000-01-01',
+        end: reportEndDate || '2099-12-31',
+        label: `${reportStartDate || 'Start'} to ${reportEndDate || 'Now'}`,
+      };
+    }
+    return null;
+  }, [reportDatePreset, reportStartDate, reportEndDate]);
+
+  // Compute inventory stock report rows with strict date filtering ("nothing before that, nothing after that")
+  const stockReportRows = useMemo(() => {
+    const isDateInRange = (dateStr?: string | null) => {
+      if (!activeStockDateRange) return true;
+      if (!dateStr) return false;
+      const d = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr.trim();
+      return d >= activeStockDateRange.start && d <= activeStockDateRange.end;
+    };
+
+    const rows: {
+      product: Product;
+      serialNo: number;
+      productName: string;
+      productCode: string;
+      brandName: string;
+      barcode: string;
+      colour: string;
+      totalStockInPeriod: number;
+      remainingStock: number;
+      status: 'in_stock' | 'low_stock' | 'out_of_stock' | 'inactive';
+    }[] = [];
+
+    products.forEach((p) => {
+      const createdInPeriod = isDateInRange(p.created_at);
+
+      // Movements for this product in selected period
+      const productMovements = movements.filter((m) => m.product_id === p.id);
+      const periodMovements = activeStockDateRange
+        ? productMovements.filter((m) => isDateInRange(m.created_at))
+        : productMovements;
+
+      // Positive stock additions in the period (excluding initial if counted below)
+      const positiveAdjustments = periodMovements
+        .filter((m) => m.quantity_change > 0 && m.movement_type !== 'INITIAL_STOCK')
+        .reduce((sum, m) => sum + Number(m.quantity_change || 0), 0);
+
+      // Calculate total stock during selected period
+      let totalStockInPeriod = 0;
+      if (activeStockDateRange) {
+        if (createdInPeriod) {
+          // If created in this period, initial stock + positive adjustments in this period
+          const initialMovement = periodMovements.find((m) => m.movement_type === 'INITIAL_STOCK');
+          const initialStock = initialMovement
+            ? Number(initialMovement.quantity_change)
+            : Number(p.purchase_quantity || p.quantity || 0);
+          totalStockInPeriod = initialStock + positiveAdjustments;
+        } else {
+          // If created before/after, only adjustments in this period
+          totalStockInPeriod = positiveAdjustments;
+        }
+
+        // If not created in period and no stock added in this period, exclude!
+        // "within the selected date range, nothing before that, nothing after that"
+        if (!createdInPeriod && totalStockInPeriod <= 0) {
+          return;
+        }
+      } else {
+        // All time: initial purchase/quantity + any positive adjustments
+        const initial = Number(p.purchase_quantity || p.quantity || 0);
+        totalStockInPeriod = initial + positiveAdjustments;
+      }
+
+      // Remaining stock (if any)
+      const remainingStock = Math.max(0, Number(p.quantity || 0));
+
+      rows.push({
+        product: p,
+        serialNo: 0,
+        productName: p.article_name + (p.colour ? ` (${p.colour})` : ''),
+        productCode: p.product_code,
+        brandName: p.brand_name || 'AMKS',
+        barcode: p.barcode,
+        colour: p.colour || '-',
+        totalStockInPeriod,
+        remainingStock,
+        status: getStockStatus(p),
+      });
+    });
+
+    // Apply search filter inside report
+    const s = reportSearch.toLowerCase().trim();
+    const filteredRows = s
+      ? rows.filter(
+          (r) =>
+            r.productName.toLowerCase().includes(s) ||
+            r.productCode.toLowerCase().includes(s) ||
+            r.barcode.toLowerCase().includes(s) ||
+            r.brandName.toLowerCase().includes(s)
+        )
+      : rows;
+
+    return filteredRows.map((r, idx) => ({
+      ...r,
+      serialNo: idx + 1,
+    }));
+  }, [products, movements, activeStockDateRange, reportSearch, lowStockThreshold]);
+
+  const handleExportStockExcel = () => {
+    const periodLabel = activeStockDateRange ? activeStockDateRange.label : 'All_Time';
+    const filename = `Inventory_Stock_Report_${periodLabel.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+    exportToExcel({
+      filename,
+      sheetName: 'Inventory Stock',
+      columns: [
+        { header: 'Serial No.', key: 'serialNo', width: 12 },
+        { header: 'Product Name', key: 'productName', width: 30 },
+        { header: 'Product Code', key: 'productCode', width: 18 },
+        { header: 'Barcode', key: 'barcode', width: 18 },
+        { header: 'Brand', key: 'brandName', width: 16 },
+        { header: 'Product Total Stock', key: 'totalStockInPeriod', width: 22 },
+        { header: 'Remaining Stock', key: 'remainingStock', width: 18 },
+        {
+          header: 'Status',
+          key: 'status',
+          width: 14,
+          formatter: (val) => String(val || '').replace('_', ' ').toUpperCase(),
+        },
+      ],
+      data: stockReportRows,
+    });
+  };
 
   useEffect(() => {
     if (!productToDelete) {
@@ -94,14 +292,7 @@ export function Products() {
     return () => clearTimeout(timer);
   }, [loadProducts]);
 
-  const lowStockThreshold = settings?.low_stock_threshold ?? 5;
 
-  function getStockStatus(product: Product): 'in_stock' | 'low_stock' | 'out_of_stock' | 'inactive' {
-    if (!product.active) return 'inactive';
-    if (product.quantity <= 0) return 'out_of_stock';
-    if (product.quantity <= lowStockThreshold) return 'low_stock';
-    return 'in_stock';
-  }
 
   const filtered = products.filter((p) => {
     if (statusFilter !== 'all' && getStockStatus(p) !== statusFilter) return false;
@@ -171,23 +362,34 @@ export function Products() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className={`max-w-7xl mx-auto ${showStockReportModal ? 'print:hidden' : ''}`}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Products & Inventory</h1>
           <p className="text-sm text-slate-500 mt-1">Manage your catalog, stock levels, suppliers, and pricing</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingProduct(null);
-            setShowForm(true);
-          }}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-sm transition-all flex items-center gap-2 cursor-pointer shrink-0"
-        >
-          <Plus size={18} />
-          <span>Add Product</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+          <button
+            type="button"
+            onClick={() => setShowStockReportModal(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-xs transition-all flex items-center gap-2 cursor-pointer shrink-0"
+            title="Generate Inventory Stock Report (Excel / Print)"
+          >
+            <FileSpreadsheet size={18} />
+            <span>Stock Report</span>
+          </button>
+          <button
+            onClick={() => {
+              setEditingProduct(null);
+              setShowForm(true);
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-xs transition-all flex items-center gap-2 cursor-pointer shrink-0"
+          >
+            <Plus size={18} />
+            <span>Add Product</span>
+          </button>
+        </div>
       </div>
 
       {/* Search + Filter Bar */}
@@ -426,6 +628,273 @@ export function Products() {
             loadProducts();
           }}
         />
+      )}
+
+      {/* Inventory Stock Report Modal */}
+      {showStockReportModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 print:p-0 print:static print:bg-transparent print:block print:inset-auto">
+          <style>{`
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 10mm;
+              }
+            }
+          `}</style>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] flex flex-col print:max-w-none print:w-full print:max-h-none print:shadow-none print:rounded-none print:p-0 print:border-none">
+            {/* Modal Action Bar (Screen Only) */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between print:hidden">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <FileSpreadsheet className="text-emerald-600" size={18} />
+                  <span>Inventory Stock Report</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Period: <span className="font-semibold text-slate-700">{activeStockDateRange ? activeStockDateRange.label : 'All Time'}</span> • {stockReportRows.length} products listed
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportStockExcel}
+                  disabled={stockReportRows.length === 0}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <FileSpreadsheet size={15} />
+                  <span>Export to Excel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  disabled={stockReportRows.length === 0}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Printer size={15} />
+                  <span>Print Report</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowStockReportModal(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Bar (Screen Only) */}
+            <div className="px-6 py-3 bg-slate-50 border-b border-gray-200 space-y-3 print:hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* Presets */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-1 flex items-center gap-1">
+                    <Calendar size={13} /> Period:
+                  </span>
+                  {(
+                    [
+                      { id: 'all', label: 'All Time' },
+                      { id: 'today', label: 'Today' },
+                      { id: 'this_week', label: 'This Week' },
+                      { id: 'this_month', label: 'This Month' },
+                      { id: 'custom', label: 'Custom Range' },
+                    ] as const
+                  ).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setReportDatePreset(p.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                        reportDatePreset === p.id
+                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                          : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Search */}
+                <div className="relative w-full sm:w-64">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={reportSearch}
+                    onChange={(e) => setReportSearch(e.target.value)}
+                    placeholder="Filter products in report..."
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Custom Range Inputs */}
+              {reportDatePreset === 'custom' && (
+                <div className="flex items-center gap-2 flex-wrap text-xs bg-white p-2 rounded-lg border border-slate-200">
+                  <span className="text-slate-500 font-medium">From:</span>
+                  <input
+                    type="date"
+                    value={reportStartDate}
+                    onChange={(e) => setReportStartDate(e.target.value)}
+                    className="px-2 py-1 bg-white border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                  />
+                  <span className="text-slate-500 font-medium">To:</span>
+                  <input
+                    type="date"
+                    value={reportEndDate}
+                    onChange={(e) => setReportEndDate(e.target.value)}
+                    className="px-2 py-1 bg-white border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                  />
+                  {(reportStartDate || reportEndDate) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReportStartDate('');
+                        setReportEndDate('');
+                      }}
+                      className="text-red-600 hover:text-red-700 text-xs font-semibold underline ml-1 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Printable Content */}
+            <div className="p-6 overflow-y-auto print:p-0 print:overflow-visible text-slate-900">
+              {/* Report Header for Print & Preview */}
+              <div className="border-b-2 border-slate-900 pb-4 mb-5">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h1 className="text-2xl font-black tracking-tight text-slate-900 uppercase">
+                      {settings?.business_name || 'AMKS'}
+                    </h1>
+                    <div className="text-xs font-medium text-slate-600">
+                      {settings?.company_name || 'AMKAS International'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs uppercase font-bold text-slate-500 tracking-wider">Inventory Report</div>
+                    <div className="text-base font-extrabold text-slate-900">Stock & Inventory Movement</div>
+                    <div className="text-xs text-slate-700 font-mono mt-0.5">
+                      Period: <strong>{activeStockDateRange ? activeStockDateRange.label : 'All Time'}</strong>
+                    </div>
+                    <div className="text-[11px] text-slate-400">Generated: {formatDateTime(new Date().toISOString())}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI Summary Cards */}
+              <div className="grid grid-cols-4 gap-3 mb-5">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Products in Period</div>
+                  <div className="text-xl font-bold font-mono text-slate-900 mt-0.5">{stockReportRows.length}</div>
+                </div>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Stock (In Period)</div>
+                  <div className="text-xl font-bold font-mono text-blue-700 mt-0.5">
+                    {stockReportRows.reduce((s, r) => s + r.totalStockInPeriod, 0)}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Remaining Stock (On Hand)</div>
+                  <div className="text-xl font-bold font-mono text-emerald-700 mt-0.5">
+                    {stockReportRows.reduce((s, r) => s + r.remainingStock, 0)}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Out of Stock Count</div>
+                  <div className="text-xl font-bold font-mono text-rose-700 mt-0.5">
+                    {stockReportRows.filter((r) => r.remainingStock <= 0).length}
+                  </div>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3 w-14 text-center">S.No.</th>
+                      <th className="py-2.5 px-3">Product Name</th>
+                      <th className="py-2.5 px-3">Product Code</th>
+                      <th className="py-2.5 px-3 text-right">Product Total Stock</th>
+                      <th className="py-2.5 px-3 text-right">Remaining Stock</th>
+                      <th className="py-2.5 px-3 text-center w-24">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium">
+                    {stockReportRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-slate-400">
+                          {loadingMovements ? 'Loading stock movements...' : 'No inventory stock records found within the selected date range.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      stockReportRows.map((r) => (
+                        <tr key={r.product.id} className="hover:bg-slate-50/50">
+                          <td className="py-2 px-3 text-center font-mono text-slate-500">{r.serialNo}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-900">
+                            {r.productName}
+                            <span className="text-[11px] text-slate-400 font-normal ml-1.5">• {r.brandName}</span>
+                          </td>
+                          <td className="py-2 px-3 font-mono text-slate-600">{r.productCode}</td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-blue-700">
+                            {r.totalStockInPeriod}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                            {r.remainingStock}
+                          </td>
+                          <td className="py-2 px-3 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                r.remainingStock <= 0
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : r.remainingStock <= lowStockThreshold
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              {r.remainingStock <= 0 ? 'Out of Stock' : r.remainingStock <= lowStockThreshold ? 'Low Stock' : 'In Stock'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  {stockReportRows.length > 0 && (
+                    <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-slate-900">
+                      <tr>
+                        <td colSpan={3} className="py-3 px-3 uppercase text-right tracking-wider text-[11px]">
+                          Grand Total:
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-blue-800 text-sm">
+                          {stockReportRows.reduce((s, r) => s + r.totalStockInPeriod, 0)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-emerald-800 text-sm">
+                          {stockReportRows.reduce((s, r) => s + r.remainingStock, 0)}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+
+              {/* Print Signatures */}
+              <div className="mt-8 pt-6 border-t border-slate-200 hidden print:grid grid-cols-2 text-xs text-slate-500">
+                <div>
+                  <div className="h-10 border-b border-slate-300 w-48 mb-1"></div>
+                  <span>Prepared By / Inventory Manager</span>
+                </div>
+                <div className="text-right flex flex-col items-end">
+                  <div className="h-10 border-b border-slate-300 w-48 mb-1"></div>
+                  <span>Authorized Signature</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {productToDelete && (
