@@ -64,7 +64,7 @@
     inset: auto !important;
   }
 
-  /* POS Receipt thermal slip layout (80mm) */
+  /* POS Receipt thermal slip layout (100mm) */
   .pos-receipt-wrapper {
     display: block !important;
     width: 100% !important;
@@ -75,10 +75,10 @@
 
   .pos-receipt-thermal {
     display: block !important;
-    width: 78mm !important;
-    max-width: 78mm !important;
+    width: 100mm !important;
+    max-width: 100mm !important;
     margin: 0 auto !important;
-    padding: 2mm 3mm !important;
+    padding: 2mm 4mm !important;
     font-size: 11px !important;
     line-height: 1.3 !important;
     box-shadow: none !important;

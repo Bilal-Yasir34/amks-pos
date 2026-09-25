@@ -68,7 +68,7 @@ export function PosReceipt({
       <style>{`
         @media print {
           @page {
-            size: ${activeFormat === 'thermal' ? '80mm auto' : 'A4 portrait'};
+            size: ${activeFormat === 'thermal' ? '100mm auto' : 'A4 portrait'};
             margin: ${activeFormat === 'thermal' ? '0mm' : '10mm'};
           }
         }
@@ -89,7 +89,7 @@ export function PosReceipt({
               }`}
             >
               <Receipt size={14} />
-              <span>Thermal Receipt (80mm)</span>
+              <span>Thermal Receipt (100mm)</span>
             </button>
             <button
               type="button"
@@ -134,7 +134,7 @@ export function PosReceipt({
 }
 
 /**
- * Clean, authentic 80mm POS Thermal Receipt Layout
+ * Clean, authentic 100mm POS Thermal Receipt Layout
  */
 function ThermalReceiptView({
   sale,
@@ -155,7 +155,7 @@ function ThermalReceiptView({
 }) {
   return (
     <div className="flex justify-center w-full">
-      <div className="pos-receipt-thermal bg-white text-slate-950 p-4 w-full max-w-[80mm] text-[11px] leading-tight border border-slate-300 rounded-sm shadow-sm print:shadow-none print:border-none print:p-2 print:m-0 print:max-w-[80mm] print:w-[80mm]">
+      <div className="pos-receipt-thermal bg-white text-slate-950 p-4 w-full max-w-[100mm] text-[11px] leading-tight border border-slate-300 rounded-sm shadow-sm print:shadow-none print:border-none print:p-2 print:m-0 print:max-w-[100mm] print:w-[100mm]">
         {/* Store Branding Header */}
         <div className="text-center pb-2">
           <h1 className="text-lg font-black uppercase tracking-wider text-black">
