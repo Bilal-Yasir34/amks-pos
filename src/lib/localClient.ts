@@ -10,9 +10,43 @@ interface StoreData {
   suppliers: any[];
   supplier_payments: any[];
   expenses: any[];
+  customers: any[];
 }
 
 const STORAGE_KEY = 'amks_pos_local_db_v1';
+
+const DEFAULT_CUSTOMERS = [
+  {
+    id: 'cust-0001',
+    name: 'Muhammad Usman',
+    phone: '0300-1234567',
+    city: 'Lahore',
+    address: 'House 12, Street 4, DHA Phase 5',
+    notes: 'Regular retail customer',
+    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'cust-0002',
+    name: 'Ayesha Khan',
+    phone: '0321-9876543',
+    city: 'Karachi',
+    address: 'Apartment 4B, Clifton Block 2',
+    notes: 'Prefers cotton shirts & jackets',
+    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'cust-0003',
+    name: 'Zahid Mahmood',
+    phone: '0333-5551234',
+    city: 'Islamabad',
+    address: 'Sector F-7/2, Street 18',
+    notes: 'Wholesale & bulk buyer',
+    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
 
 const DEFAULT_SUPPLIERS = [
   {
@@ -200,6 +234,7 @@ function getStore(): StoreData {
       suppliers: [...DEFAULT_SUPPLIERS],
       supplier_payments: [...DEFAULT_SUPPLIER_PAYMENTS],
       expenses: [...DEFAULT_EXPENSES],
+      customers: [...DEFAULT_CUSTOMERS],
     };
   }
 
@@ -216,6 +251,7 @@ function getStore(): StoreData {
         suppliers: parsed.suppliers && parsed.suppliers.length > 0 ? parsed.suppliers : [...DEFAULT_SUPPLIERS],
         supplier_payments: parsed.supplier_payments && parsed.supplier_payments.length > 0 ? parsed.supplier_payments : [...DEFAULT_SUPPLIER_PAYMENTS],
         expenses: parsed.expenses && parsed.expenses.length > 0 ? parsed.expenses : [...DEFAULT_EXPENSES],
+        customers: parsed.customers && parsed.customers.length > 0 ? parsed.customers : [...DEFAULT_CUSTOMERS],
       };
     }
   } catch {
@@ -231,6 +267,7 @@ function getStore(): StoreData {
     suppliers: [...DEFAULT_SUPPLIERS],
     supplier_payments: [...DEFAULT_SUPPLIER_PAYMENTS],
     expenses: [...DEFAULT_EXPENSES],
+    customers: [...DEFAULT_CUSTOMERS],
   };
   saveStore(initial);
   return initial;

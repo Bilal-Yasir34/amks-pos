@@ -39,6 +39,20 @@ export interface SupplierPayment {
   created_at: string;
 }
 
+export interface Customer {
+  id: string;
+  name: string;
+  city: string;
+  phone: string;
+  address?: string;
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
+  total_orders?: number;
+  total_spent?: number;
+  last_order_date?: string;
+}
+
 export interface Sale {
   id: string;
   invoice_number: string;
@@ -51,6 +65,11 @@ export interface Sale {
   total_quantity?: number;
   total_cost?: number;
   profit?: number;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_city?: string | null;
+  customer_address?: string | null;
 }
 
 export interface SaleItem {
@@ -118,4 +137,5 @@ export interface CartItem {
   available_stock: number;
 }
 
-export type Page = 'dashboard' | 'pos' | 'products' | 'suppliers' | 'vouchers' | 'barcodes' | 'sales' | 'settings';
+export type Page = 'dashboard' | 'pos' | 'products' | 'suppliers' | 'vouchers' | 'barcodes' | 'sales' | 'customers' | 'settings';
+

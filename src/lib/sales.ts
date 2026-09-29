@@ -3,8 +3,16 @@ import { getSettings, updateSettings } from './settings';
 import { generateInvoiceNumber } from './format';
 import type { CartItem, Sale, SaleItem, InventoryMovement } from '@/types';
 
+export interface CustomerCheckoutInput {
+  name?: string;
+  phone?: string;
+  city?: string;
+  address?: string;
+}
+
 export async function completeSale(
-  cart: CartItem[]
+  cart: CartItem[],
+  customerInput?: CustomerCheckoutInput | null
 ): Promise<{ sale: Sale; items: SaleItem[] }> {
   if (!cart.length) {
     throw new Error('Cart is empty. Add products before completing the sale.');
@@ -34,18 +42,99 @@ export async function completeSale(
   const subtotal = cart.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
   const total = subtotal;
 
+  // Process customer record if provided
+  let customerId: string | null = null;
+  const custName = customerInput?.name?.trim() || '';
+  const custPhone = customerInput?.phone?.trim() || '';
+  const custCity = customerInput?.city?.trim() || '';
+  const custAddress = customerInput?.address?.trim() || '';
+
+  if (custName || custPhone) {
+    try {
+      let existingCustomer: any = null;
+      if (custPhone) {
+        const { data } = await supabase
+          .from('customers')
+          .select('id, name, city, address, phone')
+          .eq('phone', custPhone)
+          .maybeSingle();
+        existingCustomer = data;
+      }
+      if (!existingCustomer && custName) {
+        const { data } = await supabase
+          .from('customers')
+          .select('id, name, city, address, phone')
+          .eq('name', custName)
+          .maybeSingle();
+        existingCustomer = data;
+      }
+
+      if (existingCustomer) {
+        customerId = existingCustomer.id;
+        const updates: any = {};
+        if (custName && existingCustomer.name !== custName) updates.name = custName;
+        if (custCity && !existingCustomer.city) updates.city = custCity;
+        if (custAddress && !existingCustomer.address) updates.address = custAddress;
+        if (custPhone && !existingCustomer.phone) updates.phone = custPhone;
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('customers').update(updates).eq('id', customerId);
+        }
+      } else {
+        const { data: newCust, error: custErr } = await supabase
+          .from('customers')
+          .insert({
+            name: custName || 'Valued Customer',
+            phone: custPhone,
+            city: custCity,
+            address: custAddress,
+          })
+          .select('id')
+          .single();
+
+        if (!custErr && newCust) {
+          customerId = newCust.id;
+        }
+      }
+    } catch (custError) {
+      console.warn('Customer record creation/lookup encountered an issue:', custError);
+    }
+  }
+
   // Insert the sale
-  const { data: saleData, error: saleError } = await supabase
+  const saleInsertPayload: any = {
+    invoice_number: invoiceNumber,
+    subtotal,
+    total,
+    invoice_printed: false,
+    status: 'completed',
+    customer_id: customerId,
+    customer_name: custName || null,
+    customer_phone: custPhone || null,
+    customer_city: custCity || null,
+    customer_address: custAddress || null,
+  };
+
+  let { data: saleData, error: saleError } = await supabase
     .from('sales')
-    .insert({
-      invoice_number: invoiceNumber,
-      subtotal,
-      total,
-      invoice_printed: false,
-      status: 'completed',
-    })
+    .insert(saleInsertPayload)
     .select()
     .single();
+
+  // Graceful fallback if database sales table hasn't added customer columns yet
+  if (saleError && (saleError.message?.toLowerCase().includes('customer') || saleError.code === 'PGRST204')) {
+    console.warn('Sales table does not have customer columns yet, falling back to base insert:', saleError.message);
+    const { customer_id, customer_name, customer_phone, customer_city, customer_address, ...basePayload } = saleInsertPayload;
+    const retry = await supabase.from('sales').insert(basePayload).select().single();
+    saleData = retry.data;
+    saleError = retry.error;
+    if (saleData) {
+      saleData.customer_id = customerId;
+      saleData.customer_name = custName;
+      saleData.customer_phone = custPhone;
+      saleData.customer_city = custCity;
+      saleData.customer_address = custAddress;
+    }
+  }
 
   if (saleError) {
     if (saleError.code === '23505') {
@@ -57,6 +146,7 @@ export async function completeSale(
   }
 
   const sale = saleData as Sale;
+
 
   // Insert sale items
   const saleItemsData = cart.map((item) => ({

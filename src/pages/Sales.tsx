@@ -19,6 +19,7 @@ import {
   Tag,
   ArrowUpRight,
   Percent,
+  User,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getSettings } from '@/lib/settings';
@@ -290,7 +291,13 @@ export function Sales() {
   const filteredSales = useMemo(() => {
     if (!search.trim()) return sales;
     const term = search.toLowerCase();
-    return sales.filter((s) => s.invoice_number?.toLowerCase().includes(term));
+    return sales.filter(
+      (s) =>
+        s.invoice_number?.toLowerCase().includes(term) ||
+        s.customer_name?.toLowerCase().includes(term) ||
+        s.customer_phone?.toLowerCase().includes(term) ||
+        s.customer_city?.toLowerCase().includes(term)
+    );
   }, [sales, search]);
 
   // Filtered expenses for search and category
@@ -831,7 +838,15 @@ export function Sales() {
                         return (
                           <tr key={sale.id} className="hover:bg-slate-50/80 transition-colors">
                             <td className="px-4 py-3 font-mono font-semibold text-slate-900">
-                              {sale.invoice_number}
+                              <div>{sale.invoice_number}</div>
+                              {sale.customer_name ? (
+                                <div className="text-[11px] font-sans font-medium text-blue-600 flex items-center gap-1 mt-0.5" title={sale.customer_phone || ''}>
+                                  <User size={11} className="shrink-0" />
+                                  <span className="truncate max-w-[130px]">{sale.customer_name}</span>
+                                </div>
+                              ) : (
+                                <div className="text-[10px] font-sans font-normal text-slate-400">Walk-in</div>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-slate-600 text-xs">
                               {formatDateTime(sale.created_at)}

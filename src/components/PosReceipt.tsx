@@ -182,6 +182,33 @@ function ThermalReceiptView({
             <span className="text-slate-600 print:text-black">Date & Time:</span>
             <span className="font-medium">{formatDateTime(sale.created_at)}</span>
           </div>
+          {sale.customer_name ? (
+            <div className="pt-1 mt-1 border-t border-dotted border-slate-300">
+              <div className="flex justify-between items-start">
+                <span className="text-slate-600 print:text-black font-semibold">Customer:</span>
+                <span className="font-bold text-right text-black">{sale.customer_name}</span>
+              </div>
+              {sale.customer_phone && (
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-slate-500 print:text-black">Phone:</span>
+                  <span className="font-medium text-slate-800 print:text-black">{sale.customer_phone}</span>
+                </div>
+              )}
+              {(sale.customer_city || sale.customer_address) && (
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-slate-500 print:text-black">City / Addr:</span>
+                  <span className="text-right truncate max-w-[130px] text-slate-700 print:text-black">
+                    {[sale.customer_city, sale.customer_address].filter(Boolean).join(', ')}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex justify-between items-center">
+              <span className="text-slate-600 print:text-black">Customer:</span>
+              <span className="font-medium text-slate-700 print:text-black">Walk-in</span>
+            </div>
+          )}
           <div className="flex justify-between items-center">
             <span className="text-slate-600 print:text-black">Payment:</span>
             <span className="font-bold text-[10px] bg-slate-100 print:bg-transparent px-1 rounded uppercase">PAID (CASH)</span>
@@ -347,10 +374,27 @@ function A4InvoiceView({
         <div className="grid grid-cols-2 gap-6 py-5 border-b border-slate-200 text-xs">
           <div>
             <span className="font-bold uppercase tracking-wider text-slate-500 block mb-1">
-              Customer:
+              Customer / Bill To:
             </span>
-            <p className="text-sm font-semibold text-slate-800">Walk-in Customer</p>
-            <p className="text-slate-500">Retail Point of Sale Transaction</p>
+            {sale.customer_name ? (
+              <div className="space-y-0.5">
+                <p className="text-sm font-bold text-slate-900">{sale.customer_name}</p>
+                {sale.customer_phone && (
+                  <p className="text-slate-600 font-mono text-[11px]"><span className="font-medium">Phone:</span> {sale.customer_phone}</p>
+                )}
+                {sale.customer_city && (
+                  <p className="text-slate-600"><span className="font-medium">City:</span> {sale.customer_city}</p>
+                )}
+                {sale.customer_address && (
+                  <p className="text-slate-500 text-[11px] leading-tight">{sale.customer_address}</p>
+                )}
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-slate-800">Walk-in Customer</p>
+                <p className="text-slate-500">Retail Point of Sale Transaction</p>
+              </>
+            )}
           </div>
           <div className="text-right">
             <span className="font-bold uppercase tracking-wider text-slate-500 block mb-1">

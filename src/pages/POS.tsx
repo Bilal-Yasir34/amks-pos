@@ -15,13 +15,20 @@ import {
   ArrowRight,
   PackageCheck,
   AlertCircle,
+  User,
+  UserCheck,
+  ChevronDown,
+  ChevronUp,
+  Phone,
+  MapPin,
+  Building,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getSettings } from '@/lib/settings';
 import { formatPrice } from '@/lib/format';
 import { completeSale, markInvoicePrinted } from '@/lib/sales';
 import { PosReceipt } from '@/components/PosReceipt';
-import type { CartItem, Product, Sale, SaleItem } from '@/types';
+import type { CartItem, Product, Sale, SaleItem, Customer } from '@/types';
 
 export function POS() {
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -33,6 +40,15 @@ export function POS() {
 
   // Cash / Tender calculator
   const [cashTendered, setCashTendered] = useState<string>('');
+
+  // Customer information state (optional during checkout)
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerCity, setCustomerCity] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [customerSuggestions, setCustomerSuggestions] = useState<Customer[]>([]);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
 
   // Live product search
   const [showCatalogModal, setShowCatalogModal] = useState(false);
@@ -219,8 +235,53 @@ export function POS() {
   function clearCart() {
     setCart([]);
     setCashTendered('');
+    clearCustomer();
+    setShowCustomerForm(false);
     focusBarcode();
   }
+
+  const handleCustomerLookup = async (term: string) => {
+    const q = term.trim();
+    if (!q || q.length < 2) {
+      setCustomerSuggestions([]);
+      setShowCustomerSuggestions(false);
+      return;
+    }
+    try {
+      const { data } = await supabase
+        .from('customers')
+        .select('*')
+        .or(`name.ilike.%${q}%,phone.ilike.%${q}%,city.ilike.%${q}%`)
+        .limit(5);
+
+      if (data && data.length > 0) {
+        setCustomerSuggestions(data as Customer[]);
+        setShowCustomerSuggestions(true);
+      } else {
+        setCustomerSuggestions([]);
+        setShowCustomerSuggestions(false);
+      }
+    } catch {
+      setCustomerSuggestions([]);
+      setShowCustomerSuggestions(false);
+    }
+  };
+
+  const selectCustomer = (cust: Customer) => {
+    setCustomerName(cust.name || '');
+    setCustomerPhone(cust.phone || '');
+    setCustomerCity(cust.city || '');
+    setCustomerAddress(cust.address || '');
+    setShowCustomerSuggestions(false);
+  };
+
+  const clearCustomer = () => {
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerCity('');
+    setCustomerAddress('');
+    setShowCustomerSuggestions(false);
+  };
 
   const subtotal = useMemo(
     () => cart.reduce((sum, item) => sum + item.unit_price * item.quantity, 0),
@@ -246,11 +307,24 @@ export function POS() {
 
     setCompleting(true);
     try {
-      const result = await completeSale(cart);
+      const customerInput =
+        customerName.trim() || customerPhone.trim()
+          ? {
+              name: customerName.trim(),
+              phone: customerPhone.trim(),
+              city: customerCity.trim(),
+              address: customerAddress.trim(),
+            }
+          : null;
+
+      const result = await completeSale(cart, customerInput);
       setCompletedSale(result);
       setCart([]);
       setCashTendered('');
-      showMessage('success', `Sale completed! Invoice: ${result.sale.invoice_number}`);
+      clearCustomer();
+      setShowCustomerForm(false);
+      const custNote = customerInput?.name ? ` • Customer: ${customerInput.name}` : '';
+      showMessage('success', `Sale completed! Invoice: ${result.sale.invoice_number}${custNote}`);
     } catch (err: any) {
       showMessage('error', err?.message || 'Failed to complete sale.');
     } finally {
@@ -574,6 +648,175 @@ export function POS() {
                   <div className="text-3xl font-black text-slate-900 tracking-tight">
                     {formatPrice(subtotal, currencySymbol)}
                   </div>
+                </div>
+
+                {/* Customer Information (Optional) Section */}
+                <div className="py-3.5 border-b border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomerForm(!showCustomerForm)}
+                      className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider hover:text-blue-600 transition-colors cursor-pointer"
+                    >
+                      <User size={15} className="text-blue-600" />
+                      <span>Customer Info</span>
+                      <span className="text-[10px] text-slate-400 font-normal normal-case">(Optional)</span>
+                      {showCustomerForm ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+
+                    <div className="flex items-center gap-1.5">
+                      {customerName || customerPhone ? (
+                        <div className="flex items-center gap-1">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <UserCheck size={12} />
+                            <span className="max-w-[110px] truncate">{customerName || customerPhone}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={clearCustomer}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                            title="Remove customer info"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setShowCustomerForm(!showCustomerForm)}
+                          className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                        >
+                          {showCustomerForm ? 'Collapse' : '+ Add Customer'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Expandable Form Body */}
+                  {showCustomerForm && (
+                    <div className="mt-3 p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2.5 transition-all">
+                      {/* Name input with instant lookup dropdown */}
+                      <div className="relative">
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                          <span className="flex items-center gap-1">
+                            <User size={12} className="text-slate-400" /> Customer Name
+                          </span>
+                          {customerName && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCustomerName('');
+                                setShowCustomerSuggestions(false);
+                              }}
+                              className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer"
+                            >
+                              clear
+                            </button>
+                          )}
+                        </label>
+                        <input
+                          type="text"
+                          value={customerName}
+                          onChange={(e) => {
+                            setCustomerName(e.target.value);
+                            handleCustomerLookup(e.target.value);
+                          }}
+                          onFocus={() => {
+                            if (customerName.trim().length >= 2) handleCustomerLookup(customerName);
+                          }}
+                          placeholder="e.g. Bilal Ahmed"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                        />
+
+                        {/* Customer Autocomplete Dropdown */}
+                        {showCustomerSuggestions && customerSuggestions.length > 0 && (
+                          <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                            <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                              Existing Customers Found
+                            </div>
+                            {customerSuggestions.map((cust) => (
+                              <button
+                                key={cust.id}
+                                type="button"
+                                onClick={() => selectCustomer(cust)}
+                                className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                              >
+                                <div className="truncate">
+                                  <div className="font-semibold text-xs text-slate-900">{cust.name}</div>
+                                  <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                                    {cust.phone && <span>{cust.phone}</span>}
+                                    {cust.city && <span>• {cust.city}</span>}
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-bold text-blue-600 shrink-0 bg-blue-100 px-1.5 py-0.5 rounded">
+                                  Select
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Phone & City row */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="relative">
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                            <Phone size={12} className="text-slate-400" /> Phone Number
+                          </label>
+                          <input
+                            type="tel"
+                            value={customerPhone}
+                            onChange={(e) => {
+                              setCustomerPhone(e.target.value);
+                              handleCustomerLookup(e.target.value);
+                            }}
+                            placeholder="0300-1234567"
+                            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                            <Building size={12} className="text-slate-400" /> City
+                          </label>
+                          <input
+                            type="text"
+                            value={customerCity}
+                            onChange={(e) => setCustomerCity(e.target.value)}
+                            placeholder="e.g. Lahore"
+                            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Address */}
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                          <MapPin size={12} className="text-slate-400" /> Address
+                        </label>
+                        <input
+                          type="text"
+                          value={customerAddress}
+                          onChange={(e) => setCustomerAddress(e.target.value)}
+                          placeholder="Street, Area, House / Shop #..."
+                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400">
+                        <span>Saved to Admin &gt; Customer Info</span>
+                        {(customerName || customerPhone || customerCity || customerAddress) && (
+                          <button
+                            type="button"
+                            onClick={clearCustomer}
+                            className="text-rose-600 hover:text-rose-700 font-semibold cursor-pointer"
+                          >
+                            Reset fields
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Cash Tendered & Change Due Section */}

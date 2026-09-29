@@ -14,6 +14,7 @@ import {
   CreditCard,
   ArrowRight,
   Sparkles,
+  Users,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getSettings } from '@/lib/settings';
@@ -104,6 +105,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       page: 'pos' as Page,
       color: 'bg-blue-50 text-blue-600 border-blue-100 hover:border-blue-300',
       badge: 'Counter',
+    },
+    {
+      title: 'Customer Info',
+      desc: 'Customer directory, contact details & cities',
+      icon: Users,
+      page: 'customers' as Page,
+      color: 'bg-sky-50 text-sky-600 border-sky-100 hover:border-sky-300',
+      badge: 'Directory',
     },
     {
       title: 'Add New Product',

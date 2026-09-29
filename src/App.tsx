@@ -30,18 +30,21 @@ import { Suppliers } from '@/pages/Suppliers';
 import { PurchaseVouchers } from '@/pages/PurchaseVouchers';
 import { BarcodeLabels } from '@/pages/BarcodeLabels';
 import { Sales } from '@/pages/Sales';
+import { Customers } from '@/pages/Customers';
 import { SettingsPage } from '@/pages/Settings';
 import { isSupabaseConfigured, saveSupabaseConfig, supabaseUrl, supabase } from '@/lib/supabase';
 import { getIsAdminAuthenticated, clearAdminSessionAuthentication } from '@/lib/auth';
 import { LoginScreen } from '@/components/LoginScreen';
+import { Users } from 'lucide-react';
 
-type AdminSection = 'dashboard' | 'products' | 'suppliers' | 'vouchers' | 'barcodes' | 'sales' | 'settings';
+type AdminSection = 'dashboard' | 'products' | 'suppliers' | 'vouchers' | 'barcodes' | 'sales' | 'customers' | 'settings';
 
 const ADMIN_NAV_ITEMS: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'products', label: 'Products / Inventory', icon: Package },
   { id: 'suppliers', label: 'Suppliers', icon: Truck },
   { id: 'vouchers', label: 'Purchase Vouchers', icon: CreditCard },
+  { id: 'customers', label: 'Customer Info', icon: Users as unknown as typeof LayoutDashboard },
   { id: 'barcodes', label: 'Barcode Labels', icon: Barcode },
   { id: 'sales', label: 'Sales History', icon: Receipt },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -53,11 +56,17 @@ GRANT ALL ON TABLE public.products TO anon, authenticated;
 GRANT ALL ON TABLE public.suppliers TO anon, authenticated;
 GRANT ALL ON TABLE public.supplier_payments TO anon, authenticated;
 GRANT ALL ON TABLE public.expenses TO anon, authenticated;
+GRANT ALL ON TABLE public.customers TO anon, authenticated;
 GRANT ALL ON TABLE public.sales TO anon, authenticated;
 GRANT ALL ON TABLE public.sale_items TO anon, authenticated;
 GRANT ALL ON TABLE public.inventory_movements TO anon, authenticated;
 GRANT ALL ON TABLE public.settings TO anon, authenticated;
 ALTER TABLE IF EXISTS public.sale_items ADD COLUMN IF NOT EXISTS cost_price_snapshot numeric(12,2);
+ALTER TABLE IF EXISTS public.sales ADD COLUMN IF NOT EXISTS customer_id uuid;
+ALTER TABLE IF EXISTS public.sales ADD COLUMN IF NOT EXISTS customer_name text;
+ALTER TABLE IF EXISTS public.sales ADD COLUMN IF NOT EXISTS customer_phone text;
+ALTER TABLE IF EXISTS public.sales ADD COLUMN IF NOT EXISTS customer_city text;
+ALTER TABLE IF EXISTS public.sales ADD COLUMN IF NOT EXISTS customer_address text;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;`;
@@ -83,6 +92,8 @@ function parseRoute(): { isAdmin: boolean; adminPage: AdminSection } {
     adminPage = 'vouchers';
   } else if (full.includes('suppliers')) {
     adminPage = 'suppliers';
+  } else if (full.includes('customer')) {
+    adminPage = 'customers';
   } else if (full.includes('products')) {
     adminPage = 'products';
   } else if (full.includes('barcodes')) {
@@ -409,6 +420,8 @@ function App() {
                     ? 'Barcode Labels'
                     : route.adminPage === 'vouchers'
                     ? 'Purchase Vouchers'
+                    : route.adminPage === 'customers'
+                    ? 'Customer Info'
                     : route.adminPage}
                 </span>
               </div>
@@ -487,6 +500,7 @@ function App() {
             {route.adminPage === 'products' && <Products />}
             {route.adminPage === 'suppliers' && <Suppliers />}
             {route.adminPage === 'vouchers' && <PurchaseVouchers />}
+            {route.adminPage === 'customers' && <Customers />}
             {route.adminPage === 'barcodes' && <BarcodeLabels />}
             {route.adminPage === 'sales' && <Sales />}
             {route.adminPage === 'settings' && <SettingsPage />}
