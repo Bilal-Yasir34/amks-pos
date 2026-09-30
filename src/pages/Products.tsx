@@ -135,6 +135,18 @@ export function Products() {
         .filter((m) => m.quantity_change > 0 && m.movement_type !== 'INITIAL_STOCK')
         .reduce((sum, m) => sum + Number(m.quantity_change || 0), 0);
 
+      // Total sold and decreased across all time
+      const allTimeSold = productMovements
+        .filter((m) => m.movement_type === 'SALE')
+        .reduce((sum, m) => sum + Math.abs(Number(m.quantity_change || 0)), 0);
+
+      const allTimeManualDecreases = productMovements
+        .filter((m) => m.movement_type === 'MANUAL_DECREASE')
+        .reduce((sum, m) => sum + Math.abs(Number(m.quantity_change || 0)), 0);
+
+      // Remaining stock on hand
+      const remainingStock = Math.max(0, Number(p.quantity || 0));
+
       // Calculate total stock during selected period
       let totalStockInPeriod = 0;
       if (activeStockDateRange) {
@@ -143,7 +155,7 @@ export function Products() {
           const initialMovement = periodMovements.find((m) => m.movement_type === 'INITIAL_STOCK');
           const initialStock = initialMovement
             ? Number(initialMovement.quantity_change)
-            : Number(p.purchase_quantity || p.quantity || 0);
+            : Math.max(0, remainingStock - positiveAdjustments);
           totalStockInPeriod = initialStock + positiveAdjustments;
         } else {
           // If created before/after, only adjustments in this period
@@ -157,12 +169,20 @@ export function Products() {
         }
       } else {
         // All time: initial purchase/quantity + any positive adjustments
-        const initial = Number(p.purchase_quantity || p.quantity || 0);
-        totalStockInPeriod = initial + positiveAdjustments;
-      }
+        const initialMovement = productMovements.find((m) => m.movement_type === 'INITIAL_STOCK');
+        if (initialMovement) {
+          totalStockInPeriod = Number(initialMovement.quantity_change) + positiveAdjustments;
+        } else {
+          totalStockInPeriod = remainingStock + allTimeSold + allTimeManualDecreases;
+        }
 
-      // Remaining stock (if any)
-      const remainingStock = Math.max(0, Number(p.quantity || 0));
+        // When no sales or reductions have occurred, Total Stock must exactly equal Remaining Stock
+        if (allTimeSold === 0 && allTimeManualDecreases === 0) {
+          totalStockInPeriod = remainingStock;
+        } else {
+          totalStockInPeriod = Math.max(totalStockInPeriod, remainingStock);
+        }
+      }
 
       rows.push({
         product: p,
@@ -200,6 +220,9 @@ export function Products() {
     const periodLabel = activeStockDateRange ? activeStockDateRange.label : 'All_Time';
     const filename = `Inventory_Stock_Report_${periodLabel.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
+    const totalStockSum = stockReportRows.reduce((s, r) => s + r.totalStockInPeriod, 0);
+    const remainingStockSum = stockReportRows.reduce((s, r) => s + r.remainingStock, 0);
+
     exportToExcel({
       filename,
       sheetName: 'Inventory Stock',
@@ -215,10 +238,15 @@ export function Products() {
           header: 'Status',
           key: 'status',
           width: 14,
-          formatter: (val) => String(val || '').replace('_', ' ').toUpperCase(),
+          formatter: (val) => String(val || '').replace(/_/g, ' ').toUpperCase(),
         },
       ],
       data: stockReportRows,
+      totalRow: {
+        'Product Name': 'GRAND TOTAL',
+        'Product Total Stock': totalStockSum,
+        'Remaining Stock': remainingStockSum,
+      },
     });
   };
 
@@ -328,9 +356,43 @@ export function Products() {
         new Set((saleItemsData || []).map((item: any) => item.sale_id).filter(Boolean))
       );
 
-      // 2. Delete all sale_items for those sales, then delete the sales records
+      // 2. Delete all sale_items for those sales, restoring other products' stock first, then delete the sales records
       if (saleIds.length > 0) {
         for (const sId of saleIds) {
+          const { data: otherItems } = await supabase
+            .from('sale_items')
+            .select('product_id, quantity')
+            .eq('sale_id', sId);
+
+          if (otherItems) {
+            for (const item of otherItems) {
+              if (item.product_id && item.product_id !== productToDelete.id) {
+                const { data: prod } = await supabase
+                  .from('products')
+                  .select('id, quantity')
+                  .eq('id', item.product_id)
+                  .single();
+
+                if (prod) {
+                  const returnQty = Number(item.quantity || 1);
+                  const restoredQty = (Number(prod.quantity) || 0) + returnQty;
+                  await supabase
+                    .from('products')
+                    .update({ quantity: restoredQty, updated_at: new Date().toISOString() })
+                    .eq('id', prod.id);
+
+                  await supabase.from('inventory_movements').insert({
+                    product_id: prod.id,
+                    previous_quantity: prod.quantity,
+                    quantity_change: returnQty,
+                    remaining_quantity: restoredQty,
+                    movement_type: 'RETURN',
+                  });
+                }
+              }
+            }
+          }
+
           await supabase.from('sale_items').delete().eq('sale_id', sId);
           await supabase.from('sales').delete().eq('id', sId);
         }
@@ -614,6 +676,7 @@ export function Products() {
             setEditingProduct(null);
             loadProducts();
             loadSuppliers();
+            loadMovements();
           }}
         />
       )}

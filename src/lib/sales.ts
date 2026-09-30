@@ -310,3 +310,94 @@ export async function adjustStock(
     console.error('Failed to record inventory movement:', movementError);
   }
 }
+
+/**
+ * Deletes or cancels a sale invoice and restores the items back into product inventory.
+ */
+export async function deleteSale(saleId: string): Promise<void> {
+  // 1. Fetch sale
+  const { data: sale, error: saleErr } = await supabase
+    .from('sales')
+    .select('*')
+    .eq('id', saleId)
+    .single();
+
+  if (saleErr || !sale) {
+    throw new Error('Sale invoice not found.');
+  }
+
+  // 2. Fetch sale items
+  const { data: items, error: itemsErr } = await supabase
+    .from('sale_items')
+    .select('*')
+    .eq('sale_id', saleId);
+
+  if (itemsErr) {
+    throw new Error('Failed to fetch sale items.');
+  }
+
+  // 3. For each item sold, restore quantity to product inventory
+  if (items && items.length > 0) {
+    for (const item of items) {
+      if (!item.product_id) continue;
+      const { data: prod } = await supabase
+        .from('products')
+        .select('id, quantity')
+        .eq('id', item.product_id)
+        .single();
+
+      if (prod) {
+        const prevQty = Number(prod.quantity || 0);
+        const returnQty = Number(item.quantity || 1);
+        const restoredQty = prevQty + returnQty;
+
+        await supabase
+          .from('products')
+          .update({
+            quantity: restoredQty,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', prod.id);
+
+        // Record RETURN inventory movement
+        await supabase.from('inventory_movements').insert({
+          product_id: prod.id,
+          invoice_number: sale.invoice_number,
+          previous_quantity: prevQty,
+          quantity_change: returnQty,
+          remaining_quantity: restoredQty,
+          movement_type: 'RETURN',
+        });
+      }
+    }
+  }
+
+  // 4. Reverse customer totals if sale was attached to a customer
+  if (sale.customer_id) {
+    const { data: customer } = await supabase
+      .from('customers')
+      .select('id, total_orders, total_spent')
+      .eq('id', sale.customer_id)
+      .single();
+
+    if (customer) {
+      const newOrders = Math.max(0, (customer.total_orders || 1) - 1);
+      const newSpent = Math.max(0, (Number(customer.total_spent) || 0) - (Number(sale.total) || 0));
+      await supabase
+        .from('customers')
+        .update({
+          total_orders: newOrders,
+          total_spent: newSpent,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', customer.id);
+    }
+  }
+
+  // 5. Delete sale items and sale record
+  await supabase.from('sale_items').delete().eq('sale_id', saleId);
+  const { error: delErr } = await supabase.from('sales').delete().eq('id', saleId);
+  if (delErr) {
+    throw new Error(`Failed to delete sale invoice: ${delErr.message}`);
+  }
+}

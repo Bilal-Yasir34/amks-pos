@@ -27,6 +27,7 @@ import { supabase } from '@/lib/supabase';
 import { getSettings } from '@/lib/settings';
 import { formatPrice, formatDateTime, formatDate } from '@/lib/format';
 import { PosReceipt } from '@/components/PosReceipt';
+import { exportToExcel } from '@/lib/excelExport';
 import type { Customer, Sale, SaleWithItems, Settings } from '@/types';
 
 export function Customers() {
@@ -303,6 +304,33 @@ export function Customers() {
     }
   };
 
+  // Export Customers to Excel (.xlsx)
+  const handleExportExcel = () => {
+    if (!filteredCustomers.length) return;
+
+    exportToExcel({
+      filename: `AMKS_Customers_${new Date().toISOString().split('T')[0]}`,
+      sheetName: 'Customers',
+      columns: [
+        { header: 'Serial No.', key: 'serial_no', width: 12 },
+        { header: 'Customer Name', key: 'name', width: 24, formatter: (val) => val || 'Walk-in Customer' },
+        { header: 'Phone', key: 'phone', width: 18, formatter: (val) => val || '-' },
+        { header: 'City', key: 'city', width: 16, formatter: (val) => val || '-' },
+        { header: 'Address', key: 'address', width: 28, formatter: (val) => val || '-' },
+        { header: 'Total Orders', key: 'total_orders', width: 14, formatter: (val) => Number(val || 0) },
+        { header: 'Total Spent', key: 'total_spent', width: 18, formatter: (val) => Number(val || 0) },
+        { header: 'Registered Date', key: 'created_at', width: 18, formatter: (val) => formatDate(val) },
+        { header: 'Notes', key: 'notes', width: 24, formatter: (val) => val || '-' },
+      ],
+      data: filteredCustomers,
+      totalRow: {
+        'Customer Name': 'GRAND TOTAL',
+        'Total Orders': filteredCustomers.reduce((s, c) => s + (c.total_orders || 0), 0),
+        'Total Spent': filteredCustomers.reduce((s, c) => s + (c.total_spent || 0), 0),
+      },
+    });
+  };
+
   // Export Customers to CSV
   const handleExportCSV = () => {
     if (!filteredCustomers.length) return;
@@ -320,7 +348,7 @@ export function Customers() {
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -348,6 +376,17 @@ export function Customers() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={filteredCustomers.length === 0}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+              title="Download customer list as Excel Spreadsheet"
+            >
+              <Download size={14} />
+              <span>Export to Excel</span>
+            </button>
+
             <button
               type="button"
               onClick={handleExportCSV}

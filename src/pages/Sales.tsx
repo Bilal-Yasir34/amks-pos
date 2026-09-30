@@ -20,12 +20,14 @@ import {
   ArrowUpRight,
   Percent,
   User,
+  Download,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getSettings } from '@/lib/settings';
 import { formatPrice, formatDateTime, formatDate } from '@/lib/format';
-import { markInvoicePrinted } from '@/lib/sales';
+import { markInvoicePrinted, deleteSale } from '@/lib/sales';
 import { PosReceipt as InvoiceContent } from '@/components/PosReceipt';
+import { exportToExcel } from '@/lib/excelExport';
 import type { Sale, SaleItem, SaleWithItems, Settings, Expense, Product } from '@/types';
 
 type DateFilterPreset = 'today' | 'this_week' | 'this_month' | 'this_year' | 'custom' | 'all';
@@ -459,6 +461,71 @@ export function Sales() {
     }
   }
 
+  const handleExportSalesExcel = () => {
+    if (!filteredSales.length) {
+      alert('No sales invoices found to export for the selected period.');
+      return;
+    }
+
+    const filename = `Sales_Report_${dateRange.label.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const totalRevenueSum = filteredSales.reduce((sum, s) => sum + Number(s.total || 0), 0);
+    const totalItemsCount = filteredSales.reduce((sum, s) => sum + Number(s.total_quantity || s.item_count || 0), 0);
+    const totalCostSum = filteredSales.reduce((sum, s) => sum + Number(s.total_cost || 0), 0);
+    const totalProfitSum = filteredSales.reduce((sum, s) => sum + (Number(s.total || 0) - Number(s.total_cost || 0)), 0);
+
+    exportToExcel({
+      filename,
+      sheetName: 'Sales Report',
+      columns: [
+        { header: 'Serial No.', key: 'serial_no', width: 12 },
+        { header: 'Invoice No.', key: 'invoice_number', width: 18 },
+        { header: 'Date & Time', key: 'created_at', width: 22, formatter: (val) => formatDateTime(val) },
+        { header: 'Customer Name', key: 'customer_name', width: 24, formatter: (val) => val || 'Walk-in Customer' },
+        { header: 'Customer Phone', key: 'customer_phone', width: 18, formatter: (val) => val || '-' },
+        { header: 'Items Sold', key: 'total_quantity', width: 14, formatter: (_, s) => Number(s.total_quantity || s.item_count || 0) },
+        { header: 'Earned (Revenue)', key: 'total', width: 20, formatter: (val) => Number(val || 0) },
+        { header: 'Product Cost (COGS)', key: 'total_cost', width: 20, formatter: (val) => Number(val || 0) },
+        { header: 'Profit', key: 'profit', width: 18, formatter: (_, s) => Number(s.total || 0) - Number(s.total_cost || 0) },
+        { header: 'Payment Method', key: 'payment_method', width: 16, formatter: (val) => String(val || 'cash').toUpperCase() },
+      ],
+      data: filteredSales,
+      totalRow: {
+        'Customer Name': 'GRAND TOTAL',
+        'Items Sold': totalItemsCount,
+        'Earned (Revenue)': totalRevenueSum,
+        'Product Cost (COGS)': totalCostSum,
+        'Profit': totalProfitSum,
+      },
+    });
+  };
+
+  const [deletingSaleId, setDeletingSaleId] = useState<string | null>(null);
+
+  const handleDeleteSale = async (sale: Sale) => {
+    if (
+      !confirm(
+        `Are you sure you want to cancel and delete invoice ${sale.invoice_number}?\n\nAll items in this invoice will be automatically returned to product inventory stock.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingSaleId(sale.id);
+    try {
+      await deleteSale(sale.id);
+      if (viewingSale?.id === sale.id) {
+        setViewingSale(null);
+      }
+      await loadData();
+      alert(`Invoice ${sale.invoice_number} was successfully cancelled and all items were returned to inventory stock.`);
+    } catch (err: any) {
+      console.error('Failed to cancel sale:', err);
+      alert(`Error cancelling invoice: ${err?.message || 'Please try again.'}`);
+    } finally {
+      setDeletingSaleId(null);
+    }
+  };
+
   return (
     <>
       <div className={`max-w-7xl mx-auto ${viewingSale ? 'print:hidden' : ''}`}>
@@ -784,6 +851,16 @@ export function Sales() {
                   Clear Search
                 </button>
               )}
+              <button
+                type="button"
+                onClick={handleExportSalesExcel}
+                disabled={filteredSales.length === 0}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                title="Export sales list to Excel (.xlsx)"
+              >
+                <Download size={14} />
+                <span>Export to Excel</span>
+              </button>
             </div>
 
             {/* Invoices Table */}
@@ -903,6 +980,14 @@ export function Sales() {
                                   title="Print invoice"
                                 >
                                   <Printer size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSale(sale)}
+                                  disabled={deletingSaleId === sale.id}
+                                  className="p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                  title="Cancel invoice & return items to stock"
+                                >
+                                  <Trash2 size={16} />
                                 </button>
                               </div>
                             </td>
@@ -1194,6 +1279,14 @@ export function Sales() {
                   className="px-4 py-2 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 flex items-center gap-2 cursor-pointer"
                 >
                   <Printer size={18} /> Print Receipt
+                </button>
+                <button
+                  onClick={() => handleDeleteSale(viewingSale)}
+                  disabled={deletingSaleId === viewingSale.id}
+                  className="px-3.5 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-50 text-sm"
+                  title="Cancel this invoice and return items to inventory stock"
+                >
+                  <Trash2 size={16} /> Cancel & Restock
                 </button>
                 <button
                   onClick={() => setViewingSale(null)}

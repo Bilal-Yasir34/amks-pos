@@ -341,6 +341,10 @@ export function PurchaseVouchers() {
     const periodLabel = activeDateRange ? activeDateRange.label : 'All_Time';
     const filename = `Purchase_Vouchers_Report_${periodLabel.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
+    const totalGoodsCostSum = filteredVouchers.reduce((s, v) => s + v.totalGoodsCost, 0);
+    const totalPaidSum = filteredVouchers.reduce((s, v) => s + v.totalPaid, 0);
+    const outstandingBalanceSum = filteredVouchers.reduce((s, v) => s + v.outstandingBalance, 0);
+
     exportToExcel<SupplierVoucherData>({
       filename,
       sheetName: 'Purchase Vouchers',
@@ -386,10 +390,16 @@ export function PurchaseVouchers() {
           header: 'Status',
           key: 'status',
           width: 14,
-          formatter: (val) => String(val || '').toUpperCase(),
+          formatter: (val) => String(val || '').replace(/_/g, ' ').toUpperCase(),
         },
       ],
       data: filteredVouchers,
+      totalRow: {
+        'Name of the Supplier': 'GRAND TOTAL',
+        'Total Payable Amount': totalGoodsCostSum,
+        'Total Amount Paid': totalPaidSum,
+        'Pending Payable Amount': outstandingBalanceSum,
+      },
     });
   };
 
